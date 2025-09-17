@@ -10,10 +10,10 @@ use bento_core::{
     new_db_pool,
     worker::{BackfillOptions, SyncOptions},
     workers::worker::Worker,
-    ProcessorFactory,
+    Client, ProcessorFactory,
 };
 use bento_server::{start, AppState, Config as ServerConfig};
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 use utoipa_axum::router::OpenApiRouter;
 
 async fn new_worker_from_config(
@@ -116,8 +116,19 @@ pub async fn new_backfill_worker_from_config(
 
 pub async fn new_server_config_from_config(config: &Config) -> Result<ServerConfig> {
     let db_pool = new_db_pool(&config.worker.database_url, None).await?;
+
+    let network: Network;
+    if let Some(rpc_url) = &config.worker.rpc_url {
+        network = Network::Custom(rpc_url.to_string(), config.worker.network.clone().into());
+    } else {
+        network = config.worker.network.clone().into();
+    }
+
+    let client = Arc::new(Client::new(network));
+
     let server_config = ServerConfig {
         db_client: db_pool,
+        node_client: client,
         api_host: String::from("0.0.0.0"),
         api_port: config.server.port.parse()?,
     };

@@ -7,6 +7,9 @@ version.workspace = true
 
 [dependencies]
 bento-types = { path = "../../crates/bento-types" }
+bento-core = { path = "../../crates/bento-core" }
+bento-trait = { path = "../../crates/bento-trait" }
+
 serde_json.workspace = true
 serde.workspace = true
 axum.workspace = true

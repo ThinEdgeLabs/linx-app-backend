@@ -166,3 +166,24 @@ pub async fn get_blocks_at_height(db: &Arc<DbPool>, height_value: i64) -> Result
         .await?;
     Ok(block_models)
 }
+
+pub async fn get_latest_block(
+    db: &Arc<DbPool>,
+    from_group: i64,
+    to_group: i64,
+) -> Result<Option<BlockModel>> {
+    use crate::schema::blocks::dsl::*;
+
+    let mut conn = db.get().await?;
+    let block_model = blocks
+        .filter(chain_from.eq(from_group))
+        .filter(chain_to.eq(to_group))
+        .order(height.desc())
+        .limit(1)
+        .select(BlockModel::as_select())
+        .first(&mut conn)
+        .await
+        .ok();
+
+    Ok(block_model)
+}
