@@ -11,9 +11,9 @@ use crate::repository::AccountTransactionRepository;
 use bento_server::AppState;
 use bento_server::error::AppError;
 
-pub struct AccountTransactionApiModule;
+pub struct AccountTransactionsRouter;
 
-impl AccountTransactionApiModule {
+impl AccountTransactionsRouter {
     pub fn register() -> OpenApiRouter<AppState> {
         OpenApiRouter::new().routes(routes!(get_account_transactions_handler))
     }
@@ -70,3 +70,30 @@ pub async fn get_account_transactions_handler(
 
     Ok(Json(transactions))
 }
+
+// #[derive(Debug, Deserialize, IntoParams, ToSchema)]
+// pub struct BalanceHistoryQuery {
+//     pub address: String,
+// }
+
+// #[utoipa::path(
+//     get,
+//     path = "/account-value-history",
+//     tag = "Account Value History",
+//     params(BalanceHistoryQuery),
+//     responses(
+//         (status = 200, description = "Account value history retrieved successfully"),
+//         (status = 400, description = "Invalid query parameters"),
+//         (status = 500, description = "Internal server error")
+//     )
+// )]
+// pub async fn get_account_value_history_handler(
+//     Query(query): Query<BalanceHistoryQuery>,
+// ) -> Result<impl IntoResponse, AppError> {
+//     if query.address.is_empty() {
+//         return Err(AppError::BadRequest("Address parameter cannot be empty".to_string()));
+//     }
+
+//     let balance_history: Vec<(BigDecimal, i64)> = Vec::new();
+//     Ok(Json(balance_history))
+// }
