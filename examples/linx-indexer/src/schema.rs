@@ -52,6 +52,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    lending_markets (id) {
+        id -> Text,
+        marketcontractid -> Text,
+        collateral_token -> Text,
+        loan_token -> Text,
+        oracle -> Text,
+        irm -> Text,
+        ltv -> Numeric,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     loan_actions (id) {
         id -> Int4,
         loan_subcontract_id -> Varchar,
@@ -144,6 +157,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     blocks,
     contract_calls,
     events,
+    lending_markets,
     loan_actions,
     loan_details,
     pools,
