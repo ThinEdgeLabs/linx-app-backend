@@ -1,8 +1,8 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_core::{DbPool, ProcessorFactory};
+use bento_core::{DbPool, ProcessorFactory, block};
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
     BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput, EventField, RichBlockEntry,
@@ -10,7 +10,10 @@ use bento_types::{
 };
 use serde_json::Value;
 
-use crate::{models::Market, repository::LendingRepository};
+use crate::{
+    models::{Market, NewLendingEvent},
+    repository::LendingRepository,
+};
 
 pub fn processor_factory() -> ProcessorFactory {
     |db_pool, args: Option<Value>| {
@@ -22,6 +25,7 @@ pub fn processor_factory() -> ProcessorFactory {
 #[derive(Debug, Clone)]
 pub struct LendingProcessorOutput {
     pub markets: Vec<Market>,
+    pub events: Vec<NewLendingEvent>,
 }
 
 impl CustomProcessorOutput for LendingProcessorOutput {
@@ -51,16 +55,30 @@ impl ProcessorTrait for LendingProcessor {
     }
 
     async fn process_blocks(&self, bwe: Vec<BlockAndEvents>) -> Result<ProcessorOutput> {
-        let mut markets: Vec<Market> = Vec::new();
+        let mut new_markets: Vec<Market> = Vec::new();
+        let mut events: Vec<NewLendingEvent> = Vec::new();
 
         for block_events in &bwe {
             let block_markets = self.extract_markets(block_events);
-            markets.extend(block_markets);
+            new_markets.extend(block_markets);
         }
 
-        tracing::info!("Processed {} blocks with {} new markets", bwe.len(), markets.len());
+        tracing::info!("Processed {} blocks with {} new markets", bwe.len(), new_markets.len());
 
-        Ok(ProcessorOutput::Custom(Arc::new(LendingProcessorOutput { markets })))
+        let mut all_markets = self.lending_repository.get_all_markets().await?;
+        all_markets.extend(new_markets.clone());
+        let market_map: HashMap<String, Market> =
+            all_markets.into_iter().map(|market| (market.id.clone(), market)).collect();
+
+        for block_events in &bwe {
+            let block_events = self.extract_lending_events(block_events, &market_map);
+            events.extend(block_events);
+        }
+
+        Ok(ProcessorOutput::Custom(Arc::new(LendingProcessorOutput {
+            markets: new_markets,
+            events,
+        })))
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
@@ -69,6 +87,10 @@ impl ProcessorTrait for LendingProcessor {
                 if !lending_output.markets.is_empty() {
                     self.lending_repository.insert_markets(&lending_output.markets).await?;
                     tracing::info!("Inserted {} new markets", lending_output.markets.len());
+                }
+                if !lending_output.events.is_empty() {
+                    self.lending_repository.insert_lending_events(&lending_output.events).await?;
+                    tracing::info!("Inserted {} new events", lending_output.events.len());
                 }
             }
         }
@@ -123,6 +145,193 @@ impl LendingProcessor {
         } else {
             None
         }
+    }
+
+    fn extract_lending_events(
+        &self,
+        block_and_events: &BlockAndEvents,
+        markets_map: &HashMap<String, Market>,
+    ) -> Vec<NewLendingEvent> {
+        block_and_events
+            .events
+            .iter()
+            .filter_map(|event| {
+                self.parse_lending_event(&block_and_events.block, event, markets_map)
+            })
+            .collect()
+    }
+
+    fn parse_lending_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        if event.contract_address == self.linx_address && event.event_index == 6 {
+            self.parse_supply_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 7 {
+            self.parse_withdraw_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 8 {
+            self.parse_borrow_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 9 {
+            self.parse_repay_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 10 {
+            self.parse_supply_collateral_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 11 {
+            self.parse_withdraw_collateral_event(block, event, markets_map)
+        } else {
+            None
+        }
+    }
+
+    fn parse_borrow_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "Borrow".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_repay_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "Borrow".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_supply_collateral_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m: Market| m.collateral_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "SupplyCollateral".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_withdraw_collateral_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m: Market| m.collateral_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "WithdrawCollateral".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_supply_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "Supply".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_withdraw_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "Withdraw".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
     }
 
     fn extract_string_field(&self, fields: &Vec<EventField>, index: usize) -> Option<String> {
