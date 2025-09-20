@@ -1,6 +1,6 @@
 CREATE TABLE lending_markets (
   id TEXT PRIMARY KEY,
-  marketContractId TEXT UNIQUE NOT NULL,
+  market_contract_id TEXT UNIQUE NOT NULL,
   collateral_token TEXT NOT NULL,
   loan_token TEXT NOT NULL,
   oracle TEXT NOT NULL,
