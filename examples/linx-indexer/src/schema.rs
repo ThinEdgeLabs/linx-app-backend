@@ -52,9 +52,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    lending_events (id) {
+        id -> Int8,
+        market_id -> Text,
+        event_type -> Text,
+        token_id -> Text,
+        on_behalf -> Text,
+        amount -> Numeric,
+        transaction_id -> Text,
+        event_index -> Int4,
+        block_time -> Timestamp,
+        created_at -> Timestamp,
+        fields -> Jsonb,
+    }
+}
+
+diesel::table! {
     lending_markets (id) {
         id -> Text,
-        marketcontractid -> Text,
+        market_contract_id -> Text,
         collateral_token -> Text,
         loan_token -> Text,
         oracle -> Text,
@@ -157,6 +173,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     blocks,
     contract_calls,
     events,
+    lending_events,
     lending_markets,
     loan_actions,
     loan_details,
