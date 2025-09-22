@@ -220,7 +220,7 @@ impl LendingProcessor {
         let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
         Some(NewLendingEvent {
             market_id,
-            event_type: "Borrow".to_string(),
+            event_type: "Repay".to_string(),
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 3)?,
