@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_core::{DbPool, ProcessorFactory, block};
+use bento_core::{DbPool, ProcessorFactory};
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
     BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput, EventField, RichBlockEntry,
@@ -179,6 +179,8 @@ impl LendingProcessor {
             self.parse_supply_collateral_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 11 {
             self.parse_withdraw_collateral_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 12 {
+            self.parse_liquidate_event(block, event, markets_map)
         } else {
             None
         }
@@ -324,6 +326,31 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_liquidate_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "Liquidate".to_string(),
+            token_id,
+            on_behalf: self.extract_string_field(&event.fields, 2)?,
+            amount: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
