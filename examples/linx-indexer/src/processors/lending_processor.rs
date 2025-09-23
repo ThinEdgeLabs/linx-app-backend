@@ -344,7 +344,7 @@ impl LendingProcessor {
     ) -> Option<NewLendingEvent> {
         let market_id = self.extract_string_field(&event.fields, 0)?;
         let market = markets_map.get(&market_id).cloned();
-        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+        let token_id = market.map(|m| m.collateral_token.clone()).unwrap_or_default();
         Some(NewLendingEvent {
             market_id,
             event_type: "Liquidate".to_string(),
