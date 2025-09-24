@@ -5,6 +5,7 @@ CREATE TABLE lending_events (
   token_id TEXT NOT NULL,
   on_behalf TEXT NOT NULL,
   amount NUMERIC NOT NULL,
+  shares NUMERIC NOT NULL,
   transaction_id TEXT NOT NULL,
   event_index INTEGER NOT NULL,
   block_time TIMESTAMP NOT NULL,
@@ -14,3 +15,6 @@ CREATE TABLE lending_events (
 );
 
 CREATE INDEX idx_lending_events_market_type_time ON lending_events(market_id, event_type, block_time DESC);
+CREATE INDEX idx_lending_events_on_behalf_market_id ON lending_events(on_behalf, market_id, block_time ASC);
+CREATE INDEX idx_lending_events_market_id ON lending_events(market_id);
+CREATE INDEX idx_lending_events_on_behalf ON lending_events(on_behalf);
