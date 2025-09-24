@@ -8,6 +8,7 @@ use bento_types::{
     BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput, EventField, RichBlockEntry,
     processors::ProcessorOutput,
 };
+use bigdecimal::BigDecimal;
 use serde_json::Value;
 
 use crate::{
@@ -122,8 +123,6 @@ impl LendingProcessor {
             .collect()
     }
 
-    /// Parse MarketCreated event
-    /// Event signature: MarketCreated(marketId: ByteVec, marketContractId: ByteVec, loanToken: ByteVec, collateralToken: ByteVec, oracle: ByteVec, interestRateModel: ByteVec, loanToValue: U256)
     fn parse_market_created_event(
         &self,
         block: &RichBlockEntry,
@@ -201,6 +200,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -226,6 +226,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -251,6 +252,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -276,6 +278,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -301,6 +304,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 3)?,
+            shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -326,6 +330,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 4)?,
+            shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
@@ -351,6 +356,7 @@ impl LendingProcessor {
             token_id,
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 5)?,
+            shares: self.extract_bigdecimal_field(&event.fields, 4)?, // repaidShares
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
