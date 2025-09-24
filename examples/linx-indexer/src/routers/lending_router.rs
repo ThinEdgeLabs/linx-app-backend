@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
 use crate::{
-    models::{LendingEvent, Market},
+    models::{LendingEvent, Market, Position},
     repository::LendingRepository,
 };
 
@@ -22,6 +22,7 @@ impl LendingRouter {
             .route("/lending/markets", get(get_markets))
             .route("/lending/borrow-activity", get(get_borrow_activity))
             .route("/lending/earn-activity", get(get_earn_activity))
+            .route("/lending/positions", get(get_positions))
     }
 }
 
@@ -40,6 +41,16 @@ pub struct ActivityQuery {
     #[serde(default = "default_page")]
     pub page: i64,
     pub market_id: String,
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct PositionsQuery {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default = "default_page")]
+    pub page: i64,
+    pub market_id: Option<String>,
+    pub address: Option<String>,
 }
 
 fn default_limit() -> i64 {
@@ -145,4 +156,34 @@ pub async fn get_earn_activity(
         lending_repo.get_activity(query.market_id, &earn_events, query.page, query.limit).await?;
 
     Ok(Json(earn_activity))
+}
+
+#[utoipa::path(
+    get,
+    path = "/lending/positions",
+    tag = "Positions",
+    params(PositionsQuery),
+    responses(
+        (status = 200, description = "List of positions retrieved successfully", body = Vec<Position>),
+        (status = 400, description = "Invalid query parameters"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_positions(
+    Query(query): Query<PositionsQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    if query.limit <= 0 || query.limit > 100 {
+        return Err(AppError::BadRequest("Limit must be between 1 and 100".to_string()));
+    }
+
+    if query.page < 1 {
+        return Err(AppError::BadRequest("Page must be a positive integer".to_string()));
+    }
+
+    let lending_repo = LendingRepository::new(state.db.clone());
+    let positions =
+        lending_repo.get_positions(query.market_id, query.address, query.page, query.limit).await?;
+
+    Ok(Json(positions))
 }
