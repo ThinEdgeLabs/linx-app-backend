@@ -238,20 +238,24 @@ impl LendingRepository {
 
         let mut conn = self.db_pool.get().await?;
 
-        let user_markets: Vec<(String, String)> = schema::lending_events::table
+        let all_user_markets: Vec<(String, String)> = schema::lending_events::table
             .select((schema::lending_events::on_behalf, schema::lending_events::market_id))
             .distinct()
             .order((
                 schema::lending_events::on_behalf.asc(),
                 schema::lending_events::market_id.asc(),
             ))
-            .offset((page - 1) * limit)
-            .limit(limit)
             .load(&mut conn)
             .await?;
 
+        let start = ((page - 1) * limit) as usize;
+        let end = (start + limit as usize).min(all_user_markets.len());
+
+        let paginated_user_markets: Vec<(String, String)> =
+            all_user_markets.into_iter().skip(start).take(end - start).collect();
+
         let mut positions = Vec::new();
-        for (address, market_id) in user_markets {
+        for (address, market_id) in paginated_user_markets {
             if let Some(position) = self.calculate_user_position(&address, &market_id).await? {
                 positions.push(position);
             }
