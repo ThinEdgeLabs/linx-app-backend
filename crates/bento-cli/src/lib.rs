@@ -1,7 +1,7 @@
 pub mod constants;
 pub mod types;
 use crate::types::*;
-use bento_types::{network::Network, repository::processor_status::get_last_timestamp};
+use bento_types::network::Network;
 use clap::Parser;
 
 use anyhow::{Context, Result};
@@ -179,9 +179,6 @@ pub async fn run_command(
         Commands::Run(run) => match run.mode {
             RunMode::Server(args) => {
                 let config = args.clone().into();
-
-                println!("Starting server...");
-
                 let server_config = new_server_config_from_config(&config).await?;
 
                 println!("Server is ready and running on http://{}", server_config.api_endpoint());
@@ -222,33 +219,6 @@ pub async fn run_command(
 
                 println!("Starting backfill worker...");
                 worker.run().await?;
-            }
-            RunMode::BackfillStatus(args) => {
-                println!("Running backfill status...");
-
-                if args.processor_name.is_empty() {
-                    return Err(anyhow::anyhow!("Processor name is required for backfill status"));
-                }
-
-                let config = args.clone().into();
-
-                let worker = new_realtime_worker_from_config(
-                    &config,
-                    &processor_factories,
-                    include_default_processors,
-                )
-                .await?;
-
-                // Get backfill status
-                let backfill_height =
-                    get_last_timestamp(&worker.db_pool, &args.processor_name, args.network, true)
-                        .await
-                        .context("Failed to get last timestamp")?;
-
-                println!(
-                    "Backfill status for processor {}: last timestamp = {}",
-                    args.processor_name, backfill_height
-                );
             }
         },
     }

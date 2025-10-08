@@ -21,7 +21,6 @@ pub enum RunMode {
     Server(CliArgs),
     Worker(CliArgs),
     Backfill(BackfillArgs),
-    BackfillStatus(BackfillStatusArgs),
 }
 
 #[derive(Args, Clone)]
@@ -58,29 +57,6 @@ pub struct BackfillArgs {
     pub stop: Option<u64>,
 }
 
-#[derive(Args, Clone)]
-pub struct BackfillStatusArgs {
-    /// Path to the config file
-    #[arg(short, long, default_value = "config.toml")]
-    pub config_path: String,
-
-    /// The processor name to check the backfill status for
-    /// This is a required argument
-    #[arg(short, long = "processor")]
-    pub processor_name: String,
-
-    /// The network to check the backfill status for
-    /// This is a required argument
-    #[arg(short, long = "network", value_parser = ["devnet", "testnet", "mainnet"])]
-    pub network: String,
-}
-
-impl From<BackfillStatusArgs> for CliArgs {
-    fn from(value: BackfillStatusArgs) -> Self {
-        Self { config_path: value.config_path, network: Some(value.network) }
-    }
-}
-
 impl From<CliArgs> for Config {
     fn from(args: CliArgs) -> Self {
         let config_str =
@@ -104,18 +80,6 @@ impl From<BackfillArgs> for Config {
         if args.network.is_some() {
             config.worker.network = args.network.clone().unwrap();
         }
-
-        config
-    }
-}
-
-impl From<BackfillStatusArgs> for Config {
-    fn from(args: BackfillStatusArgs) -> Self {
-        let config_str =
-            std::fs::read_to_string(args.config_path).expect("Failed to read config file");
-        let mut config: Self = toml::from_str(&config_str).expect("Failed to parse config file");
-
-        config.worker.network = args.network;
 
         config
     }
