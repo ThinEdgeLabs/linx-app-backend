@@ -1,8 +1,11 @@
+use rand::RngCore;
+
 pub mod models;
 pub mod processors;
 pub mod repository;
 pub mod routers;
 pub mod schema;
+pub mod services;
 
 pub enum AddressType {
     P2PKH = 0x00,
@@ -32,6 +35,16 @@ pub fn address_from_contract_id(contract_id: &str) -> String {
     bytes.extend_from_slice(&hash);
 
     bs58::encode(bytes).into_string()
+}
+
+pub fn random_tx_id() -> String {
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    bin_to_hex(&bytes)
+}
+
+pub fn bin_to_hex(bin: &[u8]) -> String {
+    bin.iter().map(|byte| format!("{:02x}", byte)).collect()
 }
 
 #[cfg(test)]

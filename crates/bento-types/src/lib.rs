@@ -301,6 +301,40 @@ pub struct ChainInfo {
     pub current_height: i64,
 }
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CallContractParams {
+    pub group: u32,
+    pub world_state_block_hash: Option<String>,
+    pub tx_id: Option<String>,
+    pub address: String,
+    pub method_index: u32,
+    pub args: Option<Vec<serde_json::Value>>,
+    pub interested_contracts: Option<Vec<String>>,
+    pub input_assets: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Deserialize, Debug)]
+pub enum CallContractResultType {
+    CallContractSucceeded,
+    CallContractFailed,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CallContractResult {
+    #[serde(rename = "type")]
+    pub result_type: CallContractResultType,
+    pub error: Option<String>,
+    pub returns: Option<Vec<serde_json::Value>>,
+    pub gas_used: Option<u32>,
+    pub contracts: Option<Vec<serde_json::Value>>,
+    pub tx_inputs: Option<Vec<serde_json::Value>>,
+    pub tx_outputs: Option<Vec<serde_json::Value>>,
+    pub events: Option<Vec<serde_json::Value>>,
+    pub debug_messages: Option<Vec<String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,7 +3,8 @@ use async_trait::async_trait;
 
 use bento_types::{
     BlockAndEvents, BlockEntry, BlockHeaderEntry, BlocksAndEventsPerTimestampRange,
-    BlocksPerTimestampRange, ChainInfo, StageMessage, Transaction,
+    BlocksPerTimestampRange, CallContractParams, CallContractResult, ChainInfo, StageMessage,
+    Transaction,
 };
 #[async_trait]
 pub trait BlockProvider {
@@ -44,6 +45,11 @@ pub trait TransactionProvider {
         offset: i64,
     ) -> Result<Vec<Transaction>>;
     async fn get_tx_by_hash(&self, tx_hash_value: &str) -> Result<Option<Transaction>>;
+}
+
+#[async_trait]
+pub trait ContractsProvider {
+    async fn call_contract(&self, params: CallContractParams) -> Result<CallContractResult>;
 }
 
 // Pipeline stage traits with message passing

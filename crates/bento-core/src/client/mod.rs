@@ -5,6 +5,7 @@ use reqwest::Client as ReqwestClient;
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 pub mod block;
+pub mod contracts;
 pub mod transaction;
 
 /// Struct representing a client that interacts with the Alephium node network.
