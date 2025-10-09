@@ -181,6 +181,12 @@ pub async fn get_positions(
         return Err(AppError::BadRequest("Page must be a positive integer".to_string()));
     }
 
+    if query.market_id.is_none() && query.address.is_none() {
+        return Err(AppError::BadRequest(
+            "Either market_id or address must be provided".to_string(),
+        ));
+    }
+
     let lending_repo = LendingRepository::new(state.db.clone());
     let positions =
         lending_repo.get_positions(query.market_id, query.address, query.page, query.limit).await?;

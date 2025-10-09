@@ -125,7 +125,30 @@ impl LendingRepository {
         Ok(events)
     }
 
-    pub async fn calculate_user_position(
+    pub async fn get_positions(
+        &self,
+        market_id: Option<String>,
+        address: Option<String>,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<Position>> {
+        match (market_id.as_ref(), address.as_ref()) {
+            (Some(market_id), Some(address)) => {
+                if let Some(position) = self.calculate_user_position(address, market_id).await? {
+                    Ok(vec![position])
+                } else {
+                    Ok(vec![])
+                }
+            }
+            (None, Some(address)) => self.calculate_user_positions(address).await,
+            (Some(market_id), None) => {
+                self.calculate_positions_for_market(&market_id, page, limit).await
+            }
+            (None, None) => Err(anyhow::anyhow!("Either market_id or address must be provided")),
+        }
+    }
+
+    async fn calculate_user_position(
         &self,
         address: &str,
         market_id: &str,
@@ -208,22 +231,13 @@ impl LendingRepository {
         Ok(positions)
     }
 
-    pub async fn calculate_user_positions(&self, address: &str) -> Result<Vec<Position>> {
-        use diesel::query_dsl::methods::{DistinctDsl, SelectDsl};
-
-        let mut conn = self.db_pool.get().await?;
-
-        let market_ids: Vec<String> = schema::lending_events::table
-            .filter(schema::lending_events::on_behalf.eq(address))
-            .select(schema::lending_events::market_id)
-            .distinct()
-            .load(&mut conn)
-            .await?;
+    async fn calculate_user_positions(&self, address: &str) -> Result<Vec<Position>> {
+        let markets = self.get_all_markets().await?;
 
         let mut positions = Vec::new();
 
-        for market_id in market_ids {
-            if let Some(position) = self.calculate_user_position(address, &market_id).await? {
+        for market in markets {
+            if let Some(position) = self.calculate_user_position(address, &market.id).await? {
                 positions.push(position);
             }
         }
@@ -231,59 +245,5 @@ impl LendingRepository {
         positions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
         Ok(positions)
-    }
-
-    async fn calculate_all_positions(&self, page: i64, limit: i64) -> Result<Vec<Position>> {
-        use diesel::query_dsl::methods::{DistinctDsl, SelectDsl};
-
-        let mut conn = self.db_pool.get().await?;
-
-        let all_user_markets: Vec<(String, String)> = schema::lending_events::table
-            .select((schema::lending_events::on_behalf, schema::lending_events::market_id))
-            .distinct()
-            .order((
-                schema::lending_events::on_behalf.asc(),
-                schema::lending_events::market_id.asc(),
-            ))
-            .load(&mut conn)
-            .await?;
-
-        let start = ((page - 1) * limit) as usize;
-        let end = (start + limit as usize).min(all_user_markets.len());
-
-        let paginated_user_markets: Vec<(String, String)> =
-            all_user_markets.into_iter().skip(start).take(end - start).collect();
-
-        let mut positions = Vec::new();
-        for (address, market_id) in paginated_user_markets {
-            if let Some(position) = self.calculate_user_position(&address, &market_id).await? {
-                positions.push(position);
-            }
-        }
-
-        Ok(positions)
-    }
-
-    pub async fn get_positions(
-        &self,
-        market_id: Option<String>,
-        address: Option<String>,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<Position>> {
-        match (market_id.as_ref(), address.as_ref()) {
-            (Some(market_id), Some(address)) => {
-                if let Some(position) = self.calculate_user_position(address, market_id).await? {
-                    Ok(vec![position])
-                } else {
-                    Ok(vec![])
-                }
-            }
-            (Some(market_id), None) => {
-                self.calculate_positions_for_market(&market_id, page, limit).await
-            }
-            (None, Some(address)) => self.calculate_user_positions(&address).await,
-            (None, None) => self.calculate_all_positions(page, limit).await,
-        }
     }
 }
