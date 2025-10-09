@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
+use crate::load_config;
+
 #[derive(Parser)]
 #[command(name = "cli")]
 #[command(about = "A CLI tool with server, worker, and backfill modes", long_about = None)]
@@ -59,9 +61,7 @@ pub struct BackfillArgs {
 
 impl From<CliArgs> for Config {
     fn from(args: CliArgs) -> Self {
-        let config_str =
-            std::fs::read_to_string(args.config_path).expect("Failed to read config file");
-        let mut config: Self = toml::from_str(&config_str).expect("Failed to parse config file");
+        let mut config = load_config(&args.config_path).expect("Failed to load config");
 
         if args.network.is_some() {
             config.worker.network = args.network.clone().unwrap();
@@ -73,9 +73,7 @@ impl From<CliArgs> for Config {
 
 impl From<BackfillArgs> for Config {
     fn from(args: BackfillArgs) -> Self {
-        let config_str =
-            std::fs::read_to_string(args.config_path).expect("Failed to read config file");
-        let mut config: Self = toml::from_str(&config_str).expect("Failed to parse config file");
+        let mut config = load_config(&args.config_path).expect("Failed to load config");
 
         if args.network.is_some() {
             config.worker.network = args.network.clone().unwrap();
