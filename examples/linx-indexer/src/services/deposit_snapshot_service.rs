@@ -1,3 +1,5 @@
+use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
+use crate::models::NewDepositSnapshot;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
 use bento_cli::load_config;
@@ -7,20 +9,18 @@ use bento_types::{
     CallContractParams, CallContractResultType, network::Network,
     utils::timestamp_millis_to_naive_datetime,
 };
-use bigdecimal::BigDecimal;
-use bigdecimal::ToPrimitive;
+use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;
 
 pub struct DepositSnapshotService {
     lending_repository: LendingRepository,
-    network: Network,
     client: Client,
 }
 
 impl DepositSnapshotService {
     pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
         let client = Client::new(network.clone());
-        Self { lending_repository: LendingRepository::new(db_pool), network, client }
+        Self { lending_repository: LendingRepository::new(db_pool), client }
     }
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
@@ -29,7 +29,6 @@ impl DepositSnapshotService {
         let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
         let lending_processor_config =
             processor_config.is_some().then_some(serde_json::to_value(processor_config)?);
-        println!("Lending Processor Config: {:?}", lending_processor_config);
         let linx_address: String = lending_processor_config
             .as_ref()
             .and_then(|v| v.get("linx_address").cloned())
@@ -42,9 +41,9 @@ impl DepositSnapshotService {
 
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
-            println!("Processing market: {}", market.id);
+            tracing::info!("Calculating deposit snapshots for market {}", market.id);
             let market_state = self.get_market_state(&market.id, &linx_address, linx_group).await?;
-            println!("Market state: {:?}", market_state);
+
             let mut page = 1;
             let page_size = 100;
             loop {
@@ -57,13 +56,28 @@ impl DepositSnapshotService {
                     break;
                 }
 
-                // Process positions here
+                let mut snapshots = Vec::new();
                 for position in positions {
-                    println!("Processing position: {:?}", position);
-                    //TODO: Calculate deposit value and store snapshot
-                    // Calculates deposit values
-                    // Stores snapshots
+                    tracing::debug!("Processing position for user {}", position.address);
+                    let amount = if position.supply_shares.is_zero() {
+                        BigDecimal::from(0)
+                    } else {
+                        (position.supply_shares
+                            * (&market_state.total_supply_assets + VIRTUAL_ASSETS)
+                            / (&market_state.total_supply_shares + VIRTUAL_SHARES))
+                            .with_scale(0)
+                    };
+                    tracing::debug!("Calculated amount for user {}: {}", position.address, amount);
+                    let deposit_snapshot = NewDepositSnapshot {
+                        address: position.address.clone(),
+                        market_id: market.id.clone(),
+                        amount,
+                        amount_usd: BigDecimal::zero(),
+                        timestamp: chrono::Utc::now().naive_utc(),
+                    };
+                    snapshots.push(deposit_snapshot);
                 }
+                self.lending_repository.insert_deposit_snapshots(&snapshots).await?;
 
                 page += 1;
             }
@@ -169,6 +183,21 @@ impl DepositSnapshotService {
         }
     }
 
+    pub async fn run_scheduler(&self) -> anyhow::Result<()> {
+        let interval = tokio::time::Duration::from_secs(300); // 5 minutes
+        let mut interval_timer = tokio::time::interval(interval);
+
+        loop {
+            interval_timer.tick().await;
+            tracing::info!("Starting scheduled deposit snapshot generation...");
+            if let Err(e) = self.generate_snapshots().await {
+                tracing::error!("Error during scheduled snapshot generation: {}", e);
+            } else {
+                tracing::info!("Scheduled deposit snapshot generation completed successfully.");
+            }
+        }
+    }
+
     fn extract_bigdecimal_from_object(
         &self,
         value: &serde_json::Value,
@@ -180,9 +209,5 @@ impl DepositSnapshotService {
             .ok_or_else(|| anyhow::anyhow!("Invalid object structure"))?
             .parse::<BigDecimal>()
             .map_err(|e| anyhow::anyhow!("Failed to parse BigDecimal: {}", e))
-    }
-
-    pub async fn run_scheduler(&self) -> anyhow::Result<()> {
-        todo!()
     }
 }
