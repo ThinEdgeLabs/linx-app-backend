@@ -1,5 +1,6 @@
 use rand::RngCore;
 
+pub mod constants;
 pub mod models;
 pub mod processors;
 pub mod repository;
