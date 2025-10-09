@@ -9,7 +9,7 @@ use diesel::{
 };
 
 use crate::{
-    models::{LendingEvent, Market, NewLendingEvent, Position},
+    models::{LendingEvent, Market, NewDepositSnapshot, NewLendingEvent, Position},
     schema,
 };
 use diesel_async::RunQueryDsl;
@@ -147,6 +147,24 @@ impl LendingRepository {
             (None, None) => Err(anyhow::anyhow!("Either market_id or address must be provided")),
         }
     }
+
+    pub async fn insert_deposit_snapshots(&self, snapshots: &[NewDepositSnapshot]) -> Result<()> {
+        if snapshots.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.db_pool.get().await?;
+
+        diesel::insert_into(schema::lending_deposits_snapshots::table)
+            .values(snapshots)
+            .on_conflict_do_nothing()
+            .execute(&mut conn)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Private helper methods
 
     async fn calculate_user_position(
         &self,
