@@ -91,10 +91,9 @@ pub struct NewDepositSnapshot {
     pub amount: BigDecimal,
     pub amount_usd: BigDecimal,
     pub timestamp: NaiveDateTime,
-    pub created_at: NaiveDateTime,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 pub struct Position {
     pub market_id: String,
     pub address: String,
@@ -106,4 +105,14 @@ pub struct Position {
     pub collateral: BigDecimal,
     #[schema(value_type = String)]
     pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug)]
+pub struct MarketState {
+    pub total_supply_assets: BigDecimal,
+    pub total_supply_shares: BigDecimal,
+    pub total_borrow_assets: BigDecimal,
+    pub total_borrow_shares: BigDecimal,
+    pub last_update: NaiveDateTime,
+    pub fee: BigDecimal,
 }
