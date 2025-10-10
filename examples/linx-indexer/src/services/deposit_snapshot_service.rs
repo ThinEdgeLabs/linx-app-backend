@@ -1,4 +1,4 @@
-use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
+use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES, dia_token_pairs};
 use crate::models::NewDepositSnapshot;
 use crate::services::OraclePriceService;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
@@ -17,13 +17,14 @@ pub struct DepositSnapshotService {
     lending_repository: LendingRepository,
     client: Client,
     price_service: OraclePriceService,
+    network: Network,
 }
 
 impl DepositSnapshotService {
     pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
         let client = Client::new(network.clone());
-        let price_service = OraclePriceService::new(network);
-        Self { lending_repository: LendingRepository::new(db_pool), client, price_service }
+        let price_service = OraclePriceService::new(network.clone());
+        Self { lending_repository: LendingRepository::new(db_pool), client, price_service, network }
     }
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
@@ -42,12 +43,46 @@ impl DepositSnapshotService {
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap();
 
-        let (usdt_price, timestamp) = self.price_service.get_dia_value("USDT/USD").await?;
-        tracing::info!("Fetched USDT price: {}, timestamp: {}", usdt_price, timestamp);
+        let token_pairs = dia_token_pairs(&self.network);
+        let mut oracle_prices: std::collections::HashMap<&str, BigDecimal> =
+            std::collections::HashMap::new();
 
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
             tracing::info!("Calculating deposit snapshots for market {}", market.id);
+
+            // Get the oracle token pair key for the loan token
+            let key = match token_pairs.get(&market.loan_token.as_str()) {
+                Some(k) => *k,
+                None => {
+                    tracing::warn!(
+                        "No DIA token pair found for loan token {}, skipping market {}",
+                        market.loan_token,
+                        market.id
+                    );
+                    continue;
+                }
+            };
+
+            // Fetch the oracle price for the loan token and cache it
+            let loan_token_price = match oracle_prices.get(market.loan_token.as_str()) {
+                Some(p) => p.clone(),
+                None => match self.price_service.get_dia_value(key).await {
+                    Ok((p, _)) => {
+                        oracle_prices.insert(key, p.clone());
+                        p
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to fetch DIA price for token {} in market {}: {}",
+                            market.loan_token,
+                            market.id,
+                            e
+                        );
+                        continue;
+                    }
+                },
+            };
 
             let market_state = match self
                 .get_market_state(&market.id, &linx_address, linx_group)
@@ -84,11 +119,18 @@ impl DepositSnapshotService {
                             .with_scale(0)
                     };
                     tracing::debug!("Calculated amount for user {}: {}", position.address, amount);
+                    //TODO: Handle normalization factor for tokens with decimals
+                    // DIA price has 8 decimals
+                    // Loan token might have different decimals, need to adjust accordingly
+                    let amount_usd = &amount
+                        * oracle_prices
+                            .get(market.loan_token.as_str())
+                            .unwrap_or(&BigDecimal::zero());
                     let deposit_snapshot = NewDepositSnapshot {
                         address: position.address.clone(),
                         market_id: market.id.clone(),
                         amount,
-                        amount_usd: BigDecimal::zero(),
+                        amount_usd,
                         timestamp: chrono::Utc::now().naive_utc(),
                     };
                     snapshots.push(deposit_snapshot);
