@@ -42,7 +42,17 @@ impl DepositSnapshotService {
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
             tracing::info!("Calculating deposit snapshots for market {}", market.id);
-            let market_state = self.get_market_state(&market.id, &linx_address, linx_group).await?;
+
+            let market_state = match self
+                .get_market_state(&market.id, &linx_address, linx_group)
+                .await
+            {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::error!("Failed to fetch market state for market {}: {}", market.id, e);
+                    continue;
+                }
+            };
 
             let mut page = 1;
             let page_size = 100;
@@ -110,14 +120,12 @@ impl DepositSnapshotService {
         let result = match self.client.call_contract(params).await {
             Ok(res) => res,
             Err(e) => {
-                tracing::error!("Failed to fetch state for market {}: {}", market_id, e);
                 return Err(anyhow::anyhow!("Failed to fetch market state: {}", e));
             }
         };
 
         match result.result_type {
             CallContractResultType::CallContractFailed => {
-                tracing::error!("Contract call failed for market {}", market_id);
                 anyhow::bail!("Contract call failed for market {}", market_id);
             }
             CallContractResultType::CallContractSucceeded => {
@@ -125,11 +133,6 @@ impl DepositSnapshotService {
                     anyhow::anyhow!("No returns in contract call for market {}", market_id)
                 })?;
                 if returns.len() != 6 {
-                    tracing::error!(
-                        "Unexpected number of return values for market {}: expected 6, got {}",
-                        market_id,
-                        returns.len()
-                    );
                     anyhow::bail!(
                         "Expected 6 return values for market {}, got {}",
                         market_id,
