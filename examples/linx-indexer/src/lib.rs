@@ -1,3 +1,4 @@
+use bigdecimal::BigDecimal;
 use rand::RngCore;
 
 pub mod constants;
@@ -46,6 +47,22 @@ pub fn random_tx_id() -> String {
 
 pub fn bin_to_hex(bin: &[u8]) -> String {
     bin.iter().map(|byte| format!("{:02x}", byte)).collect()
+}
+
+pub fn extract_bigdecimal_from_object(
+    json: &serde_json::Value,
+    key: &str,
+) -> anyhow::Result<BigDecimal> {
+    json.as_object()
+        .and_then(|obj| obj.get(key))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid object structure"))?
+        .parse::<BigDecimal>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse BigDecimal: {}", e))
+}
+
+pub fn string_to_hex(s: &str) -> String {
+    s.bytes().map(|byte| format!("{:02x}", byte)).collect()
 }
 
 #[cfg(test)]

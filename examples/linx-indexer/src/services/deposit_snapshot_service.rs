@@ -1,5 +1,6 @@
 use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
 use crate::models::NewDepositSnapshot;
+use crate::services::OraclePriceService;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
 use bento_cli::load_config;
@@ -15,12 +16,14 @@ use std::sync::Arc;
 pub struct DepositSnapshotService {
     lending_repository: LendingRepository,
     client: Client,
+    price_service: OraclePriceService,
 }
 
 impl DepositSnapshotService {
     pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
         let client = Client::new(network.clone());
-        Self { lending_repository: LendingRepository::new(db_pool), client }
+        let price_service = OraclePriceService::new(network);
+        Self { lending_repository: LendingRepository::new(db_pool), client, price_service }
     }
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
@@ -38,6 +41,9 @@ impl DepositSnapshotService {
             .and_then(|v| v.get("linx_group").cloned())
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap();
+
+        let (usdt_price, timestamp) = self.price_service.get_dia_value("USDT/USD").await?;
+        tracing::info!("Fetched USDT price: {}, timestamp: {}", usdt_price, timestamp);
 
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
