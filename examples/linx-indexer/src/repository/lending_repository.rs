@@ -180,19 +180,41 @@ impl LendingRepository {
         let mut supply_shares = BigDecimal::from(0);
         let mut borrow_shares = BigDecimal::from(0);
         let mut collateral = BigDecimal::from(0);
+        let mut supplied_amount = BigDecimal::from(0);
+        let mut borrowed_amount = BigDecimal::from(0);
         let mut last_updated = events[0].block_time;
 
         for event in &events {
             match event.event_type.as_str() {
-                "Supply" => supply_shares += &event.shares,
-                "Withdraw" => supply_shares -= &event.shares,
-                "Borrow" => borrow_shares += &event.shares,
-                "Repay" => borrow_shares -= &event.shares,
+                "Supply" => {
+                    supply_shares += &event.shares;
+                    supplied_amount += &event.amount;
+                }
+                "Withdraw" => {
+                    supply_shares -= &event.shares;
+                    supplied_amount -= &event.amount;
+                }
+                "Borrow" => {
+                    borrow_shares += &event.shares;
+                    borrowed_amount += &event.amount;
+                }
+                "Repay" => {
+                    borrow_shares -= &event.shares;
+                    borrowed_amount -= &event.amount;
+                }
                 "SupplyCollateral" => collateral += &event.amount,
                 "WithdrawCollateral" => collateral -= &event.amount,
                 "Liquidate" => {
                     borrow_shares -= &event.shares;
                     collateral -= &event.amount;
+                    // Extract repaidAssets from fields
+                    if let Some(repaid_assets) = event.fields.get("repaidAssets") {
+                        if let Some(repaid_str) = repaid_assets.as_str() {
+                            if let Ok(repaid) = repaid_str.parse::<BigDecimal>() {
+                                borrowed_amount -= repaid;
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -215,6 +237,8 @@ impl LendingRepository {
             supply_shares,
             borrow_shares,
             collateral,
+            supplied_amount,
+            borrowed_amount,
             updated_at: last_updated,
         }))
     }

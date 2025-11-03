@@ -104,6 +104,10 @@ pub struct Position {
     #[schema(value_type = String)]
     pub collateral: BigDecimal,
     #[schema(value_type = String)]
+    pub supplied_amount: BigDecimal,
+    #[schema(value_type = String)]
+    pub borrowed_amount: BigDecimal,
+    #[schema(value_type = String)]
     pub updated_at: NaiveDateTime,
 }
 
