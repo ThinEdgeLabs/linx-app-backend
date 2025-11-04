@@ -3,14 +3,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use bento_types::DbPool;
 use bigdecimal::BigDecimal;
-use diesel::{
-    ExpressionMethods, OptionalExtension,
-    query_dsl::methods::{FilterDsl, LimitDsl, OffsetDsl, OrderDsl},
-};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 
 use crate::{
     models::{LendingEvent, Market, NewDepositSnapshot, NewLendingEvent, Position},
-    schema,
+    schema::{self},
 };
 use diesel_async::RunQueryDsl;
 
@@ -76,14 +73,22 @@ impl LendingRepository {
         &self,
         market_id: String,
         event_types: &[String],
+        address: Option<String>,
         page: i64,
         limit: i64,
     ) -> Result<Vec<LendingEvent>> {
         let mut conn = self.db_pool.get().await?;
 
-        let events: Vec<LendingEvent> = schema::lending_events::table
+        let mut query = schema::lending_events::table
             .filter(schema::lending_events::market_id.eq(market_id))
             .filter(schema::lending_events::event_type.eq_any(event_types))
+            .into_boxed();
+
+        if let Some(addr) = address {
+            query = query.filter(schema::lending_events::on_behalf.eq(addr));
+        }
+
+        let events: Vec<LendingEvent> = query
             .order(schema::lending_events::block_time.desc())
             .offset((page - 1) * limit)
             .limit(limit)
@@ -249,8 +254,6 @@ impl LendingRepository {
         page: i64,
         limit: i64,
     ) -> Result<Vec<Position>> {
-        use diesel::query_dsl::methods::{DistinctDsl, SelectDsl};
-
         let mut conn = self.db_pool.get().await?;
 
         let addresses: Vec<String> = schema::lending_events::table

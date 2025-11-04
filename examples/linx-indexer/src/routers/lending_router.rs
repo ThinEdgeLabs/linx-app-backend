@@ -41,6 +41,7 @@ pub struct ActivityQuery {
     #[serde(default = "default_page")]
     pub page: i64,
     pub market_id: String,
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -121,8 +122,9 @@ pub async fn get_borrow_activity(
         String::from("SupplyCollateral"),
         String::from("WithdrawCollateral"),
     ];
-    let borrow_activity =
-        lending_repo.get_activity(query.market_id, &borrow_events, query.page, query.limit).await?;
+    let borrow_activity = lending_repo
+        .get_activity(query.market_id, &borrow_events, query.address, query.page, query.limit)
+        .await?;
 
     Ok(Json(borrow_activity))
 }
@@ -152,8 +154,9 @@ pub async fn get_earn_activity(
 
     let lending_repo = LendingRepository::new(state.db.clone());
     let earn_events = [String::from("Supply"), String::from("Withdraw")];
-    let earn_activity =
-        lending_repo.get_activity(query.market_id, &earn_events, query.page, query.limit).await?;
+    let earn_activity = lending_repo
+        .get_activity(query.market_id, &earn_events, query.address, query.page, query.limit)
+        .await?;
 
     Ok(Json(earn_activity))
 }
