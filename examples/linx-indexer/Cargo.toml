@@ -37,6 +37,7 @@ utoipa.workspace = true
 utoipa-swagger-ui.workspace = true
 bs58 = "0.5.1"
 rand.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true

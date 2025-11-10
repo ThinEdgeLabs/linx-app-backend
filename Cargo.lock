@@ -1864,6 +1864,7 @@ dependencies = [
  "dotenvy",
  "mockall",
  "rand 0.9.1",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
