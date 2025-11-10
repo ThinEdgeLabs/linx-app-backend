@@ -4,4 +4,5 @@ pub use deposit_snapshot_service::*;
 pub mod price {
     pub mod oracle_price_service;
     pub mod linx_price_service;
+    pub mod price_service;
 }

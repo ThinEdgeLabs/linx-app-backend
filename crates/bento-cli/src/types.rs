@@ -89,6 +89,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub backfill: BackfillConfig,
     pub processors: Option<ProcessorsConfig>,
+    pub price_service: Option<PriceServiceConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -124,6 +125,11 @@ pub struct ProcessorsConfig {
 pub struct ProcessorTypeConfig {
     #[serde(flatten)]
     pub config: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PriceServiceConfig {
+    pub linx_api_url: String,
 }
 
 #[derive(Args)]
