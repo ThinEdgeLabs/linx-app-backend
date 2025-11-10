@@ -1,6 +1,6 @@
-use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES, dia_token_pairs};
+use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
 use crate::models::NewDepositSnapshot;
-use crate::services::OraclePriceService;
+use crate::services::oracle_price_service::{OraclePriceService, dia_token_pairs};
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
 use bento_cli::load_config;
