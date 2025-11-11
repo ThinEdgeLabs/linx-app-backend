@@ -43,7 +43,7 @@ fn testnet_dia_token_pairs() -> HashMap<&'static str, &'static str> {
 }
 
 pub struct OraclePriceService {
-    client: Arc<dyn ContractsProvider>,
+    client: Arc<dyn ContractsProvider + Send + Sync>,
     dia_oracle_address: String,
     group_index: u32,
     network: Network,
@@ -51,7 +51,6 @@ pub struct OraclePriceService {
 
 impl OraclePriceService {
     pub fn new(network: Network) -> Self {
-        let client = Client::new(network.clone());
         let config_path = "config.toml";
         let config = load_config(&config_path).expect("Failed to load config");
         let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
@@ -68,12 +67,14 @@ impl OraclePriceService {
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap();
 
-        Self { client: Arc::new(client), dia_oracle_address, group_index, network }
+        let client: Arc<dyn ContractsProvider + Send + Sync> =
+            Arc::new(Client::new(network.clone()));
+        Self { client, dia_oracle_address, group_index, network }
     }
 
     #[cfg(test)]
     pub fn new_with_client(
-        client: Arc<dyn ContractsProvider>,
+        client: Arc<dyn ContractsProvider + Send + Sync>,
         dia_oracle_address: String,
         group_index: u32,
         network: Network,
