@@ -94,6 +94,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    lending_positions (id) {
+        id -> Int8,
+        market_id -> Text,
+        address -> Text,
+        supply_shares -> Numeric,
+        borrow_shares -> Numeric,
+        collateral -> Numeric,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     loan_actions (id) {
         id -> Int4,
         loan_subcontract_id -> Varchar,
@@ -119,6 +131,60 @@ diesel::table! {
 }
 
 diesel::table! {
+    points_config (id) {
+        id -> Int4,
+        action_type -> Text,
+        points_per_usd -> Nullable<Numeric>,
+        points_per_usd_per_day -> Nullable<Numeric>,
+        is_active -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    points_multipliers (id) {
+        id -> Int4,
+        multiplier_type -> Text,
+        threshold_value -> Numeric,
+        multiplier -> Numeric,
+        is_active -> Bool,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    points_snapshots (id) {
+        id -> Int4,
+        address -> Text,
+        snapshot_date -> Date,
+        swap_points -> Numeric,
+        supply_points -> Numeric,
+        borrow_points -> Numeric,
+        base_points_total -> Numeric,
+        multiplier_type -> Nullable<Text>,
+        multiplier_value -> Numeric,
+        multiplier_points -> Numeric,
+        referral_points -> Numeric,
+        total_points -> Numeric,
+        total_volume_usd -> Numeric,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    points_transactions (id) {
+        id -> Int4,
+        address -> Text,
+        action_type -> Text,
+        transaction_id -> Nullable<Text>,
+        amount_usd -> Numeric,
+        points_earned -> Numeric,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     pools (id) {
         id -> Int8,
         address -> Text,
@@ -133,6 +199,15 @@ diesel::table! {
         #[max_length = 50]
         processor -> Varchar,
         last_timestamp -> Int8,
+    }
+}
+
+diesel::table! {
+    referral_codes (id) {
+        id -> Int4,
+        code -> Text,
+        owner_address -> Text,
+        created_at -> Timestamp,
     }
 }
 
@@ -177,6 +252,16 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_referrals (id) {
+        id -> Int4,
+        user_address -> Text,
+        referral_code -> Text,
+        referred_by_address -> Text,
+        created_at -> Timestamp,
+    }
+}
+
 diesel::joinable!(contract_calls -> account_transactions (account_transaction_id));
 diesel::joinable!(swaps -> account_transactions (account_transaction_id));
 diesel::joinable!(transfers -> account_transactions (account_transaction_id));
@@ -189,11 +274,18 @@ diesel::allow_tables_to_appear_in_same_query!(
     lending_deposits_snapshots,
     lending_events,
     lending_markets,
+    lending_positions,
     loan_actions,
     loan_details,
+    points_config,
+    points_multipliers,
+    points_snapshots,
+    points_transactions,
     pools,
     processor_status,
+    referral_codes,
     swaps,
     transactions,
     transfers,
+    user_referrals,
 );
