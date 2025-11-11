@@ -1,13 +1,22 @@
-use anyhow::Context;
+use anyhow::{Context, Result};
+use async_trait::async_trait;
 use bento_cli::load_config;
 use bento_types::network::Network;
 use bigdecimal::BigDecimal;
+#[cfg(test)]
+use mockall::automock;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use super::linx_price_service::LinxPriceService;
 use super::oracle_price_service::OraclePriceService;
+
+#[cfg_attr(test, automock)]
+#[async_trait]
+pub trait PriceServiceTrait {
+    async fn get_token_price(&self, token_id: &str) -> Result<BigDecimal>;
+}
 
 #[derive(Clone)]
 struct CachedPrice {
@@ -22,6 +31,7 @@ pub struct PriceService {
     cache_ttl: Duration,
 }
 
+#[cfg_attr(test, automock)]
 impl PriceService {
     pub fn new(network: Network) -> Self {
         let config_path = "config.toml";
@@ -97,12 +107,19 @@ impl PriceService {
         }
     }
 
-    /// Clear the entire cache (useful for testing or manual refresh).
+    /// Clear the entire cache (for testing or manual refresh).
     #[allow(dead_code)]
     pub fn clear_cache(&self) {
         if let Ok(mut cache) = self.cache.write() {
             cache.clear();
         }
+    }
+}
+
+#[async_trait]
+impl PriceServiceTrait for PriceService {
+    async fn get_token_price(&self, token_id: &str) -> Result<BigDecimal> {
+        self.get_token_price(token_id).await
     }
 }
 
