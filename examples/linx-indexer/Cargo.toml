@@ -7,6 +7,10 @@ edition = "2024"
 name = "bento"
 path = "src/bin/main.rs"
 
+[[bin]]
+name = "points"
+path = "src/bin/points.rs"
+
 [dependencies]
 bento-core = { path = "../../crates/bento-core" }
 bento-cli = { path = "../../crates/bento-cli" }
