@@ -90,6 +90,7 @@ pub struct Config {
     pub backfill: BackfillConfig,
     pub processors: Option<ProcessorsConfig>,
     pub price_service: Option<PriceServiceConfig>,
+    pub points: Option<PointsConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -130,6 +131,17 @@ pub struct ProcessorTypeConfig {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PriceServiceConfig {
     pub linx_api_url: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PointsConfig {
+    pub referral_percentage: f64,
+    #[serde(default = "default_calculation_time")]
+    pub calculation_time: String,
+}
+
+fn default_calculation_time() -> String {
+    "01:00".to_string()
 }
 
 #[derive(Args)]

@@ -1,15 +1,34 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use bento_types::DbPool;
 use bigdecimal::BigDecimal;
+use chrono::NaiveDateTime;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
+#[cfg(test)]
+use mockall::automock;
 
 use crate::{
-    models::{LendingEvent, Market, NewDepositSnapshot, NewLendingEvent, Position},
+    models::{DepositSnapshot, LendingEvent, Market, NewDepositSnapshot, NewLendingEvent, Position},
     schema::{self},
 };
 use diesel_async::RunQueryDsl;
+
+#[cfg_attr(test, automock)]
+#[async_trait]
+pub trait LendingRepositoryTrait {
+    async fn get_borrow_events_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<LendingEvent>>;
+    async fn get_deposit_snapshots_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<DepositSnapshot>>;
+}
 
 pub struct LendingRepository {
     db_pool: Arc<DbPool>,
@@ -290,5 +309,58 @@ impl LendingRepository {
         positions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
         Ok(positions)
+    }
+
+    pub async fn get_deposit_snapshots_in_period(
+        &self,
+        start_time: chrono::NaiveDateTime,
+        end_time: chrono::NaiveDateTime,
+    ) -> Result<Vec<crate::models::DepositSnapshot>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let snapshots: Vec<crate::models::DepositSnapshot> =
+            schema::lending_deposits_snapshots::table
+                .filter(schema::lending_deposits_snapshots::timestamp.ge(start_time))
+                .filter(schema::lending_deposits_snapshots::timestamp.lt(end_time))
+                .load(&mut conn)
+                .await?;
+
+        Ok(snapshots)
+    }
+
+    pub async fn get_borrow_events_in_period(
+        &self,
+        start_time: chrono::NaiveDateTime,
+        end_time: chrono::NaiveDateTime,
+    ) -> Result<Vec<LendingEvent>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let events: Vec<LendingEvent> = schema::lending_events::table
+            .filter(schema::lending_events::event_type.eq("Borrow"))
+            .filter(schema::lending_events::block_time.ge(start_time))
+            .filter(schema::lending_events::block_time.lt(end_time))
+            .load(&mut conn)
+            .await?;
+
+        Ok(events)
+    }
+}
+
+#[async_trait]
+impl LendingRepositoryTrait for LendingRepository {
+    async fn get_borrow_events_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<LendingEvent>> {
+        self.get_borrow_events_in_period(start_time, end_time).await
+    }
+
+    async fn get_deposit_snapshots_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<DepositSnapshot>> {
+        self.get_deposit_snapshots_in_period(start_time, end_time).await
     }
 }

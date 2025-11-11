@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use bento_types::DbPool;
 use chrono::{NaiveDate, NaiveDateTime};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::RunQueryDsl;
+#[cfg(test)]
+use mockall::automock;
 
 use crate::{
     models::{
@@ -15,18 +18,113 @@ use crate::{
     schema,
 };
 
+#[cfg_attr(test, automock)]
+#[async_trait]
+pub trait PointsRepositoryTrait {
+    // ==================== Points Config ====================
+
+    async fn get_points_config(&self) -> Result<Vec<PointsConfig>>;
+
+    async fn get_points_config_for_action(&self, action_type: &str)
+    -> Result<Option<PointsConfig>>;
+
+    async fn insert_points_config(&self, configs: &[NewPointsConfig]) -> Result<()>;
+
+    // ==================== Points Multipliers ====================
+
+    async fn get_active_multipliers(&self) -> Result<Vec<PointsMultiplier>>;
+
+    async fn get_multipliers_by_type(&self, multiplier_type: &str)
+    -> Result<Vec<PointsMultiplier>>;
+
+    async fn insert_multipliers(&self, multipliers: &[NewPointsMultiplier]) -> Result<()>;
+
+    // ==================== Referral Codes ====================
+
+    async fn get_referral_code(&self, code: &str) -> Result<Option<ReferralCode>>;
+
+    async fn get_referral_code_by_owner(&self, owner_address: &str)
+    -> Result<Option<ReferralCode>>;
+
+    async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode>;
+
+    // ==================== User Referrals ====================
+
+    async fn get_all_user_referrals(&self) -> Result<Vec<UserReferral>>;
+
+    async fn get_user_referral(&self, user_address: &str) -> Result<Option<UserReferral>>;
+
+    async fn get_referrals_for_code(&self, referral_code: &str) -> Result<Vec<UserReferral>>;
+
+    async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral>;
+
+    // ==================== Points Snapshots ====================
+
+    async fn get_snapshot(
+        &self,
+        address: &str,
+        snapshot_date: NaiveDate,
+    ) -> Result<Option<PointsSnapshot>>;
+
+    async fn get_user_snapshots(
+        &self,
+        address: &str,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<PointsSnapshot>>;
+
+    async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>>;
+
+    async fn get_leaderboard(
+        &self,
+        snapshot_date: Option<NaiveDate>,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<PointsSnapshot>>;
+
+    async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
+    async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
+    async fn get_user_transactions(
+        &self,
+        address: &str,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<PointsTransaction>>;
+    async fn get_transactions_by_action(
+        &self,
+        action_type: &str,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<PointsTransaction>>;
+    async fn get_transactions_in_period(
+        &self,
+        address: &str,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<PointsTransaction>>;
+    async fn insert_transactions(&self, transactions: &[NewPointsTransaction]) -> Result<()>;
+    async fn insert_transaction(
+        &self,
+        transaction: NewPointsTransaction,
+    ) -> Result<PointsTransaction>;
+}
+
 pub struct PointsRepository {
     db_pool: Arc<DbPool>,
 }
 
+#[cfg_attr(test, automock)]
 impl PointsRepository {
     pub fn new(db_pool: Arc<DbPool>) -> Self {
         Self { db_pool }
     }
+}
 
+#[async_trait]
+impl PointsRepositoryTrait for PointsRepository {
     // ==================== Points Config ====================
 
-    pub async fn get_points_config(&self) -> Result<Vec<PointsConfig>> {
+    async fn get_points_config(&self) -> Result<Vec<PointsConfig>> {
         let mut conn = self.db_pool.get().await?;
 
         let configs: Vec<PointsConfig> = schema::points_config::table
@@ -37,7 +135,7 @@ impl PointsRepository {
         Ok(configs)
     }
 
-    pub async fn get_points_config_for_action(
+    async fn get_points_config_for_action(
         &self,
         action_type: &str,
     ) -> Result<Option<PointsConfig>> {
@@ -53,7 +151,7 @@ impl PointsRepository {
         Ok(config)
     }
 
-    pub async fn insert_points_config(&self, configs: &[NewPointsConfig]) -> Result<()> {
+    async fn insert_points_config(&self, configs: &[NewPointsConfig]) -> Result<()> {
         if configs.is_empty() {
             return Ok(());
         }
@@ -72,7 +170,7 @@ impl PointsRepository {
 
     // ==================== Points Multipliers ====================
 
-    pub async fn get_active_multipliers(&self) -> Result<Vec<PointsMultiplier>> {
+    async fn get_active_multipliers(&self) -> Result<Vec<PointsMultiplier>> {
         let mut conn = self.db_pool.get().await?;
 
         let multipliers: Vec<PointsMultiplier> = schema::points_multipliers::table
@@ -84,7 +182,7 @@ impl PointsRepository {
         Ok(multipliers)
     }
 
-    pub async fn get_multipliers_by_type(
+    async fn get_multipliers_by_type(
         &self,
         multiplier_type: &str,
     ) -> Result<Vec<PointsMultiplier>> {
@@ -100,7 +198,7 @@ impl PointsRepository {
         Ok(multipliers)
     }
 
-    pub async fn insert_multipliers(&self, multipliers: &[NewPointsMultiplier]) -> Result<()> {
+    async fn insert_multipliers(&self, multipliers: &[NewPointsMultiplier]) -> Result<()> {
         if multipliers.is_empty() {
             return Ok(());
         }
@@ -117,7 +215,7 @@ impl PointsRepository {
 
     // ==================== Referral Codes ====================
 
-    pub async fn get_referral_code(&self, code: &str) -> Result<Option<ReferralCode>> {
+    async fn get_referral_code(&self, code: &str) -> Result<Option<ReferralCode>> {
         let mut conn = self.db_pool.get().await?;
 
         let referral_code: Option<ReferralCode> = schema::referral_codes::table
@@ -129,7 +227,7 @@ impl PointsRepository {
         Ok(referral_code)
     }
 
-    pub async fn get_referral_code_by_owner(
+    async fn get_referral_code_by_owner(
         &self,
         owner_address: &str,
     ) -> Result<Option<ReferralCode>> {
@@ -144,7 +242,7 @@ impl PointsRepository {
         Ok(referral_code)
     }
 
-    pub async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode> {
+    async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode> {
         let mut conn = self.db_pool.get().await?;
 
         let inserted_code: ReferralCode = diesel::insert_into(schema::referral_codes::table)
@@ -157,7 +255,15 @@ impl PointsRepository {
 
     // ==================== User Referrals ====================
 
-    pub async fn get_user_referral(&self, user_address: &str) -> Result<Option<UserReferral>> {
+    async fn get_all_user_referrals(&self) -> Result<Vec<UserReferral>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let referrals: Vec<UserReferral> = schema::user_referrals::table.load(&mut conn).await?;
+
+        Ok(referrals)
+    }
+
+    async fn get_user_referral(&self, user_address: &str) -> Result<Option<UserReferral>> {
         let mut conn = self.db_pool.get().await?;
 
         let referral: Option<UserReferral> = schema::user_referrals::table
@@ -169,7 +275,7 @@ impl PointsRepository {
         Ok(referral)
     }
 
-    pub async fn get_referrals_for_code(&self, referral_code: &str) -> Result<Vec<UserReferral>> {
+    async fn get_referrals_for_code(&self, referral_code: &str) -> Result<Vec<UserReferral>> {
         let mut conn = self.db_pool.get().await?;
 
         let referrals: Vec<UserReferral> = schema::user_referrals::table
@@ -180,7 +286,7 @@ impl PointsRepository {
         Ok(referrals)
     }
 
-    pub async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral> {
+    async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral> {
         let mut conn = self.db_pool.get().await?;
 
         let inserted_referral: UserReferral = diesel::insert_into(schema::user_referrals::table)
@@ -193,7 +299,7 @@ impl PointsRepository {
 
     // ==================== Points Snapshots ====================
 
-    pub async fn get_snapshot(
+    async fn get_snapshot(
         &self,
         address: &str,
         snapshot_date: NaiveDate,
@@ -210,7 +316,7 @@ impl PointsRepository {
         Ok(snapshot)
     }
 
-    pub async fn get_user_snapshots(
+    async fn get_user_snapshots(
         &self,
         address: &str,
         page: i64,
@@ -229,7 +335,7 @@ impl PointsRepository {
         Ok(snapshots)
     }
 
-    pub async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>> {
+    async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
@@ -242,7 +348,7 @@ impl PointsRepository {
         Ok(snapshot)
     }
 
-    pub async fn get_leaderboard(
+    async fn get_leaderboard(
         &self,
         snapshot_date: Option<NaiveDate>,
         page: i64,
@@ -266,7 +372,7 @@ impl PointsRepository {
         Ok(snapshots)
     }
 
-    pub async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()> {
+    async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()> {
         if snapshots.is_empty() {
             return Ok(());
         }
@@ -286,7 +392,7 @@ impl PointsRepository {
         Ok(())
     }
 
-    pub async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot> {
+    async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot> {
         let mut conn = self.db_pool.get().await?;
 
         let upserted_snapshot: PointsSnapshot =
@@ -317,7 +423,7 @@ impl PointsRepository {
 
     // ==================== Points Transactions ====================
 
-    pub async fn get_user_transactions(
+    async fn get_user_transactions(
         &self,
         address: &str,
         page: i64,
@@ -336,7 +442,7 @@ impl PointsRepository {
         Ok(transactions)
     }
 
-    pub async fn get_transactions_by_action(
+    async fn get_transactions_by_action(
         &self,
         action_type: &str,
         page: i64,
@@ -355,7 +461,7 @@ impl PointsRepository {
         Ok(transactions)
     }
 
-    pub async fn get_transactions_in_period(
+    async fn get_transactions_in_period(
         &self,
         address: &str,
         start_time: NaiveDateTime,
@@ -374,7 +480,7 @@ impl PointsRepository {
         Ok(transactions)
     }
 
-    pub async fn insert_transactions(&self, transactions: &[NewPointsTransaction]) -> Result<()> {
+    async fn insert_transactions(&self, transactions: &[NewPointsTransaction]) -> Result<()> {
         if transactions.is_empty() {
             return Ok(());
         }
@@ -389,7 +495,7 @@ impl PointsRepository {
         Ok(())
     }
 
-    pub async fn insert_transaction(
+    async fn insert_transaction(
         &self,
         transaction: NewPointsTransaction,
     ) -> Result<PointsTransaction> {

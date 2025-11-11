@@ -5,11 +5,25 @@ use crate::models::{
 use crate::models::{AccountTransactionDetails, TransferDetails, TransferTransactionDto};
 use crate::schema::swaps;
 use anyhow::Result;
+use async_trait::async_trait;
 use bento_types::DbPool;
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, RunQueryDsl};
+#[cfg(test)]
+use mockall::automock;
 use std::sync::Arc;
+
+#[cfg_attr(test, automock)]
+#[async_trait]
+pub trait AccountTransactionRepositoryTrait {
+    async fn get_swaps_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>>;
+}
 
 pub struct AccountTransactionRepository {
     db_pool: Arc<DbPool>,
@@ -301,5 +315,94 @@ impl AccountTransactionRepository {
         }
 
         Ok(transaction_details)
+    }
+
+    pub async fn get_swaps_in_period(
+        &self,
+        start_time: chrono::NaiveDateTime,
+        end_time: chrono::NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>> {
+        let mut conn = self.db_pool.get().await?;
+
+        use crate::schema::{account_transactions, swaps};
+
+        // Get account transactions in period that are swaps
+        let swap_account_txs: Vec<AccountTransaction> = account_transactions::table
+            .filter(account_transactions::tx_type.eq("swap"))
+            .filter(account_transactions::timestamp.ge(start_time))
+            .filter(account_transactions::timestamp.lt(end_time))
+            .load(&mut conn)
+            .await?;
+
+        if swap_account_txs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let tx_ids: Vec<i64> = swap_account_txs.iter().map(|tx| tx.id).collect();
+
+        // Get swap details for these transactions
+        let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
+            .filter(swaps::account_transaction_id.eq_any(&tx_ids))
+            .load::<(
+                i64,
+                i64,
+                String,
+                String,
+                bigdecimal::BigDecimal,
+                bigdecimal::BigDecimal,
+                String,
+                String,
+            )>(&mut conn)
+            .await?
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    account_tx_id,
+                    token_in,
+                    token_out,
+                    amount_in,
+                    amount_out,
+                    pool_address,
+                    tx_id,
+                )| {
+                    (
+                        account_tx_id,
+                        SwapDetails {
+                            id,
+                            token_in,
+                            token_out,
+                            amount_in,
+                            amount_out,
+                            pool_address,
+                            tx_id,
+                        },
+                    )
+                },
+            )
+            .collect();
+
+        let mut result = Vec::new();
+        for account_tx in swap_account_txs {
+            if let Some(swap) = swaps_map.get(&account_tx.id) {
+                result.push(SwapTransactionDto {
+                    account_transaction: account_tx,
+                    swap: swap.clone(),
+                });
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl AccountTransactionRepositoryTrait for AccountTransactionRepository {
+    async fn get_swaps_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>> {
+        self.get_swaps_in_period(start_time, end_time).await
     }
 }
