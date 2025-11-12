@@ -1,0 +1,31 @@
+[worker]
+database_url = "postgresql://postgres:postgres@localhost:5432/bento_alephium"
+network = "testnet"
+# rpc_url = "https://alephium.linxlabs.org"
+request_interval = 5000
+step = 10000
+backstep = 30000
+
+[server]
+port = "8080"
+
+[backfill]
+workers = 2
+request_interval = 100 # 5 seconds
+step = 30000
+backstep = 30000       # 1 minute backstep
+
+[processors.transfers]
+gas_payer_addresses = ["################################"]
+
+[processors.lending]
+linx_address = "#################################"
+linx_group = 0
+dia_oracle_address = "######################################"
+
+[price_service]
+linx_api_url = "https://api.linxlabs.org/tokens"
+
+[points]
+referral_percentage = 0.05
+calculation_time = "01:00" # Time in HH:MM format (24-hour) for daily scheduler
