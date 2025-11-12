@@ -8,16 +8,18 @@ use diesel_async::RunQueryDsl;
 
 use diesel::prelude::*;
 
-/// Insert txs into the database.
+/// Insert txs into the database
 pub async fn insert_txs_to_db(db: Arc<DbPool>, txs: Vec<TransactionModel>) -> Result<()> {
     let mut conn = db.get().await?;
-    let tx_count = insert_into(crate::schema::transactions::table)
+    insert_into(crate::schema::transactions::table)
         .values(&txs)
         .on_conflict(crate::schema::transactions::tx_hash)
         .do_nothing()
         .execute(&mut conn)
         .await?;
-    tracing::info!("Inserted {} txs", tx_count);
+
+    tracing::info!("Inserted {} txs", txs.len());
+
     Ok(())
 }
 

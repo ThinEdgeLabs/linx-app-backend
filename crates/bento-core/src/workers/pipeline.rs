@@ -17,10 +17,11 @@ pub struct Pipeline {
 
 impl Pipeline {
     pub fn new(client: Arc<Client>, db_pool: Arc<DbPool>, processor: DynProcessor) -> Self {
+        let processor = Arc::new(processor);
         Self {
             client,
-            processor: Arc::new(ProcessorStage { processor }),
-            storage: Arc::new(StorageStage { db_pool }),
+            processor: Arc::new(ProcessorStage { processor: processor.clone() }),
+            storage: Arc::new(StorageStage { db_pool, processor }),
         }
     }
 

@@ -10,6 +10,8 @@ services:
     image: postgres:17
     container_name: bento-alephium-db
     <<: *default-logging
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bento_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bento_password}
@@ -65,15 +67,18 @@ services:
   cli:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.cli
     container_name: bento-alephium-cli
     <<: *default-logging
-    command: tail -f /dev/null
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./examples/linx-indexer/config.toml:/app/config.toml
+      - ./examples/linx-indexer/migrations:/app/migrations
+      - ./examples/linx-indexer/src/schema.rs:/app/src/schema.rs
     networks:
       - bento-network
 

@@ -5,6 +5,7 @@ use reqwest::Client as ReqwestClient;
 use reqwest_middleware::ClientBuilder;
 use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 pub mod block;
+pub mod contracts;
 pub mod transaction;
 
 /// Struct representing a client that interacts with the Alephium node network.
@@ -29,9 +30,9 @@ impl Client {
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(
                 Duration::from_millis(100), // Minimum retry delay
-                Duration::from_secs(10),    // Maximum retry delay
+                Duration::from_secs(1),     // Maximum retry delay
             )
-            .build_with_max_retries(5); // Maximum number of retries
+            .build_with_max_retries(2); // Maximum number of retries
 
         // Create client with retry middleware
         let client = ClientBuilder::new(ReqwestClient::new())

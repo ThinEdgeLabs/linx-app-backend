@@ -7,6 +7,9 @@ version.workspace = true
 
 [dependencies]
 bento-types = { path = "../../crates/bento-types" }
+bento-core = { path = "../../crates/bento-core" }
+bento-trait = { path = "../../crates/bento-trait" }
+
 serde_json.workspace = true
 serde.workspace = true
 axum.workspace = true
@@ -18,3 +21,5 @@ utoipa-swagger-ui.workspace = true
 utoipa-axum.workspace = true
 utoipa.workspace = true
 thiserror.workspace = true
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["cors"] }

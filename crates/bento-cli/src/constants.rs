@@ -1,4 +1,2 @@
-// Default processors name
-pub const DEFAULT_BLOCK_PROCESSOR: &str = "block";
-pub const DEFAULT_EVENT_PROCESSOR: &str = "event";
-pub const DEFAULT_TX_PROCESSOR: &str = "tx";
+pub const ALPH_TOKEN_ID: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+pub const DUST_AMOUNT: &str = "1000000000000000"; // 0.001 ALPH

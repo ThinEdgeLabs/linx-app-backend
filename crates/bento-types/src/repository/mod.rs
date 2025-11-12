@@ -1,6 +1,5 @@
 pub mod block;
 pub mod event;
-pub mod processor_status;
 pub mod transaction;
 use std::sync::Arc;
 

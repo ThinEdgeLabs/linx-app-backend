@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::NaiveDateTime;
 use diesel::{insert_into, query_dsl::methods::FilterDsl, SelectableHelper};
 
 use crate::Order;
@@ -11,7 +12,7 @@ use diesel::query_dsl::methods::OrderDsl;
 use diesel::query_dsl::methods::{LimitDsl, OffsetDsl, SelectDsl};
 use diesel_async::RunQueryDsl;
 
-/// Insert blocks into the database.
+/// Insert blocks into the database
 #[allow(clippy::get_first)]
 pub async fn insert_blocks_to_db(db: Arc<DbPool>, block_models: Vec<BlockModel>) -> Result<()> {
     if block_models.is_empty() {
@@ -141,4 +142,48 @@ pub async fn exists_block(db: Arc<DbPool>, block_hash_value: &str) -> Result<boo
         .is_ok();
 
     Ok(block_exists)
+}
+
+pub async fn get_max_block_timestamp(db: &Arc<DbPool>) -> Result<Option<i64>> {
+    use crate::schema::blocks::dsl::*;
+
+    let mut conn = db.get().await?;
+    let max_timestamp: Option<NaiveDateTime> =
+        blocks.select(diesel::dsl::max(timestamp)).first(&mut conn).await?;
+    let milliseconds =
+        max_timestamp.map_or(None, |ts: NaiveDateTime| Some(ts.and_utc().timestamp_millis()));
+    Ok(milliseconds)
+}
+
+pub async fn get_blocks_at_height(db: &Arc<DbPool>, height_value: i64) -> Result<Vec<BlockModel>> {
+    use crate::schema::blocks::dsl::*;
+
+    let mut conn = db.get().await?;
+    let block_models = blocks
+        .filter(height.eq(height_value))
+        .select(BlockModel::as_select())
+        .load(&mut conn)
+        .await?;
+    Ok(block_models)
+}
+
+pub async fn get_latest_block(
+    db: &Arc<DbPool>,
+    from_group: i64,
+    to_group: i64,
+) -> Result<Option<BlockModel>> {
+    use crate::schema::blocks::dsl::*;
+
+    let mut conn = db.get().await?;
+    let block_model = blocks
+        .filter(chain_from.eq(from_group))
+        .filter(chain_to.eq(to_group))
+        .order(height.desc())
+        .limit(1)
+        .select(BlockModel::as_select())
+        .first(&mut conn)
+        .await
+        .ok();
+
+    Ok(block_model)
 }

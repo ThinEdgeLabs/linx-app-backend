@@ -1,0 +1,27 @@
+{
+  "unsigned": {
+    "txId": "bd4a5a111a4e969d2ebc48e2a1c0388f2c2c42341aee14df262f6bf9a1f39008",
+    "version": 0,
+    "networkId": 0,
+    "scriptOpt": null,
+    "gasAmount": 20000,
+    "gasPrice": "1000000000",
+    "inputs": [],
+    "fixedOutputs": [
+      {
+        "hint": -421195643,
+        "key": "5275ab6861b47c8bad12e8af62432650392da076e4fcaa4e30641ca12435242b",
+        "attoAlphAmount": "399476733320874602",
+        "address": "12jK2jHyyJTJyuRMRya7QJSojgVnb5yh4HVzNNw6BTBDF",
+        "tokens": [],
+        "lockTime": 1747389092708,
+        "message": "000200000196d6b7cfe400"
+      }
+    ]
+  },
+  "scriptExecutionOk": true,
+  "contractInputs": [],
+  "generatedOutputs": [],
+  "inputSignatures": [],
+  "scriptSignatures": []
+}

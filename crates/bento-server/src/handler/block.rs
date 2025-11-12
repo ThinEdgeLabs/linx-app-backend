@@ -84,6 +84,7 @@ pub async fn get_block_by_height_handler(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
     let db = state.db;
+    //TODO: Pass the from_group and to_group parameters to the repository function
     let block_model = get_block_by_height(db, query.height).await?;
 
     if block_model.is_none() {

@@ -5,10 +5,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
-    convert_bwe_to_block_models, processors::ProcessorOutput, BlockAndEvents, BlockModel,
+    convert_bwe_to_block_models, processors::ProcessorOutput, repository::insert_blocks_to_db,
+    BlockAndEvents,
 };
-use diesel::insert_into;
-use diesel_async::RunQueryDsl;
 
 use crate::{config::ProcessorConfig, db::DbPool, ProcessorFactory};
 
@@ -47,23 +46,20 @@ impl ProcessorTrait for BlockProcessor {
         &self.connection_pool
     }
 
-    async fn process_blocks(
-        &self,
-        _from: i64,
-        _to: i64,
-        blocks: Vec<BlockAndEvents>,
-    ) -> Result<ProcessorOutput> {
+    async fn process_blocks(&self, blocks: Vec<BlockAndEvents>) -> Result<ProcessorOutput> {
         let models = convert_bwe_to_block_models(blocks);
         Ok(ProcessorOutput::Block(models))
     }
-}
 
-/// Insert blocks into the database.
-pub async fn insert_to_db(db: Arc<DbPool>, blocks: Vec<BlockModel>) -> Result<()> {
-    let mut conn = db.get().await?;
-    insert_into(bento_types::schema::blocks::dsl::blocks)
-        .values(&blocks)
-        .execute(&mut conn)
-        .await?;
-    Ok(())
+    async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
+        match output {
+            ProcessorOutput::Block(blocks) => {
+                if !blocks.is_empty() {
+                    insert_blocks_to_db(self.connection_pool.clone(), blocks).await?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }

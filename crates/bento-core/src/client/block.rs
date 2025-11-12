@@ -1,10 +1,7 @@
-use std::time::Duration;
-
-use backoff::{backoff::Backoff, ExponentialBackoff as BackoffExp};
 use bento_trait::stage::BlockProvider;
 use bento_types::{
-    BlockAndEvents, BlockEntry, BlockHeaderEntry, BlocksAndEventsPerTimestampRange,
-    BlocksPerTimestampRange,
+    BlockAndEvents, BlockEntry, BlockHashesResponse, BlockHeaderEntry,
+    BlocksAndEventsPerTimestampRange, BlocksPerTimestampRange, ChainInfo,
 };
 
 use anyhow::Result;
@@ -33,94 +30,29 @@ impl BlockProvider for Client {
     /// # Returns
     ///
     /// A `Result` containing a `BlocksAndEventsPerTimestampRange` structure, or an error if the request fails.
-    /// TODO: Fix hardcoded parameters in retry
     async fn get_blocks_and_events(
         &self,
-        from_ts: i64,
-        to_ts: i64,
+        from_ts: u64,
+        to_ts: u64,
     ) -> Result<BlocksAndEventsPerTimestampRange> {
-        let endpoint = format!("blockflow/blocks-with-events?fromTs={}&toTs={}", from_ts, to_ts);
+        // Using the rich-blocks endpoint to get complete tx input data
+        let endpoint = format!("blockflow/rich-blocks?fromTs={}&toTs={}", from_ts, to_ts);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
 
-        // Configure backoff for deserialization retries
-        let mut backoff = BackoffExp {
-            initial_interval: Duration::from_millis(100),
-            max_interval: Duration::from_secs(10),
-            ..BackoffExp::default()
-        };
+        // Let middleware handle all retries, fail fast on deserialization
+        let response = self.inner.get(url).send().await?;
 
-        let mut attempt = 0;
-        let max_attempts = 3;
-
-        loop {
-            attempt += 1;
-            tracing::debug!(
-                "Requesting blocks with events from: {} to: {} (attempt {}/{})",
-                from_ts,
-                to_ts,
-                attempt,
-                max_attempts
-            );
-
-            // The middleware will handle retries for the network request itself
-            let response_result = self.inner.get(url.clone()).send().await;
-
-            match response_result {
-                Ok(response) => {
-                    // Check status code first
-                    if !response.status().is_success() {
-                        let status = response.status();
-
-                        // For server errors, we might want to retry
-                        if status.is_server_error() && attempt < max_attempts {
-                            if let Some(duration) = backoff.next_backoff() {
-                                tracing::warn!(
-                                    "API returned error status: {}. Retrying in {:?}...",
-                                    status,
-                                    duration
-                                );
-                                tokio::time::sleep(duration).await;
-                                continue;
-                            }
-                        }
-
-                        return Err(anyhow::anyhow!("API returned error status: {}", status));
-                    }
-
-                    // Try to deserialize with retry on deserialization errors
-                    match response.json::<BlocksAndEventsPerTimestampRange>().await {
-                        Ok(data) => return Ok(data),
-                        Err(e) => {
-                            tracing::error!("Failed to deserialize response: {:?}", e);
-                            tracing::error!("timestamp range: {} - {}", from_ts, to_ts);
-
-                            // Retry deserialization errors if we have attempts left
-                            if attempt < max_attempts {
-                                if let Some(duration) = backoff.next_backoff() {
-                                    tracing::warn!(
-                                        "Deserialization failed. Retrying in {:?}...",
-                                        duration
-                                    );
-                                    tokio::time::sleep(duration).await;
-                                    continue;
-                                }
-                            }
-
-                            return Err(anyhow::anyhow!("Error decoding response body: {:?}", e));
-                        }
-                    }
-                }
-                Err(e) => {
-                    // The middleware should have already retried network errors,
-                    // but if we get here, it means all retries failed
-                    return Err(anyhow::anyhow!(
-                        "Request failed after {} attempts: {:?}",
-                        attempt,
-                        e
-                    ));
-                }
-            }
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("API returned error status: {}", response.status()));
         }
+
+        let data = response.json::<BlocksAndEventsPerTimestampRange>().await.map_err(|e| {
+            tracing::error!("Failed to deserialize response: {:?}", e);
+            tracing::error!("timestamp range: {} - {}", from_ts, to_ts);
+            anyhow::anyhow!("Error decoding response body: {:?}", e)
+        })?;
+
+        Ok(data)
     }
 
     // Get a block with hash.
@@ -142,7 +74,7 @@ impl BlockProvider for Client {
     ///
     /// A `Result` containing a `BlockAndEvents` structure, or an error if the request fails.
     async fn get_block_and_events_by_hash(&self, block_hash: &str) -> Result<BlockAndEvents> {
-        let endpoint = format!("blockflow/blocks-with-events/{}", block_hash);
+        let endpoint = format!("blockflow/rich-blocks/{}", block_hash);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let response = self.inner.get(url).send().await?.json().await?;
         Ok(response)
@@ -152,6 +84,29 @@ impl BlockProvider for Client {
     // GET:/blockflow/headers/{block_hash}
     async fn get_block_header(&self, block_hash: &str) -> Result<BlockHeaderEntry> {
         let endpoint = format!("blockflow/headers/{}", block_hash);
+        let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
+        let response = self.inner.get(url).send().await?.json().await?;
+        Ok(response)
+    }
+
+    async fn get_block_hash_by_height(
+        &self,
+        height: u64,
+        from_group: u32,
+        to_group: u32,
+    ) -> Result<Vec<String>> {
+        let endpoint = format!(
+            "blockflow/hashes?height={}&fromGroup={}&toGroup={}",
+            height, from_group, to_group
+        );
+        let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
+        let response: BlockHashesResponse = self.inner.get(url).send().await?.json().await?;
+        Ok(response.headers)
+    }
+
+    async fn get_chain_info(&self, from_group: u32, to_group: u32) -> Result<ChainInfo> {
+        let endpoint =
+            format!("blockflow/chain-info?fromGroup={}&toGroup={}", from_group, to_group);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let response = self.inner.get(url).send().await?.json().await?;
         Ok(response)

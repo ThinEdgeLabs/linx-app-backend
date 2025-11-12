@@ -1,34 +1,29 @@
-use anyhow::{Context, Result};
-use axum::routing::get;
-use bento_types::{db::new_db_pool, DbPool};
+use crate::error::AppError;
+use anyhow::Result;
+use axum::{extract::State, response::IntoResponse, routing::get};
+use bento_core::Client;
+use bento_trait::stage::BlockProvider;
+use bento_types::{repository::get_latest_block, ChainInfo, DbPool};
 use handler::{BlockApiModule, EventApiModule, TransactionApiModule};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use utoipa::{openapi::Info, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::SwaggerUi;
+
 pub mod error;
 pub mod handler;
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub db_client: Arc<DbPool>,
+    pub node_client: Arc<Client>,
     pub api_host: String,
     pub api_port: u16,
 }
 
 impl Config {
-    pub async fn from_env() -> Result<Self> {
-        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-        let db_client =
-            new_db_pool(&db_url, None).await.context("Failed to create connection pool")?;
-
-        let host = std::env::var("HOST").unwrap_or("127.0.0.1".to_string());
-        let port = std::env::var("PORT").unwrap_or("3000".to_string());
-
-        Ok(Self { db_client, api_host: host, api_port: port.parse().unwrap() })
-    }
-
     pub fn api_endpoint(&self) -> String {
         format!("{}:{}", self.api_host, self.api_port)
     }
@@ -37,6 +32,7 @@ impl Config {
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<DbPool>,
+    pub node_client: Arc<Client>,
 }
 use std::str::FromStr;
 
@@ -88,19 +84,16 @@ impl Pagination {
     }
 }
 
-pub async fn start(config: Config) -> Result<()> {
-    // initialize tracing
-    tracing_subscriber::fmt::init();
+pub async fn start(config: Config, custom_router: Option<OpenApiRouter<AppState>>) -> Result<()> {
+    let state = AppState { db: config.clone().db_client, node_client: config.clone().node_client };
 
-    // create our application state
-    let state = AppState { db: config.clone().db_client };
+    let (app, mut api) = configure_api(custom_router).with_state(state).split_for_parts();
 
-    // create our application stack
-    let (app, mut api) = configure_api().with_state(state).split_for_parts();
-
-    api.info = Info::new("Alephium REST API", "v1");
+    api.info = Info::new("REST API", "v1");
     api.info.description = Some("Bento Alephium Indexer REST API".to_string());
-    let app = app.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api.clone()));
+    let app = app
+        .layer(CorsLayer::permissive())
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api.clone()));
 
     let addr = config.api_endpoint();
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -110,22 +103,42 @@ pub async fn start(config: Config) -> Result<()> {
     Ok(())
 }
 
-// basic handler that responds with a static string
 async fn root() -> &'static str {
     "Hello Alephium Indexer API"
 }
 
-/// Setup the API routes
+async fn health_check(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let from_group = 0;
+    let to_group = 0;
+    let chain_info: ChainInfo = state.node_client.get_chain_info(from_group, to_group).await?;
+    let remote_height = chain_info.current_height;
+    let block = get_latest_block(&state.db, from_group as i64, to_group as i64).await?;
+    let block_height = block.map(|b| b.height);
+
+    block_height.map_or(
+        Err(AppError::Internal(anyhow::anyhow!("No block found in database"))),
+        |h| {
+            if remote_height - h > 3 {
+                Err(AppError::Internal(anyhow::anyhow!("Indexer is too far behind the node")))
+            } else {
+                Ok(())
+            }
+        },
+    )
+}
+
 #[allow(clippy::let_and_return)]
-pub fn configure_api() -> OpenApiRouter<AppState> {
+pub fn configure_api(custom_router: Option<OpenApiRouter<AppState>>) -> OpenApiRouter<AppState> {
     let router = OpenApiRouter::new()
-        .nest("/blocks", BlockApiModule::register())
-        .nest("/events", EventApiModule::register())
-        .nest("/transactions", TransactionApiModule::register())
-        .route("/", get(root));
+        .nest("/v1/blocks", BlockApiModule::register())
+        .nest("/v1/events", EventApiModule::register())
+        .nest("/v1/transactions", TransactionApiModule::register())
+        .route("/", get(root))
+        .route("/v1/health", get(health_check));
 
-    // Users can extend with their modules:
-    // router.merge(YourApiModule::register())
-
-    router
+    if let Some(custom_router) = custom_router {
+        router.nest("/v1", custom_router)
+    } else {
+        router
+    }
 }

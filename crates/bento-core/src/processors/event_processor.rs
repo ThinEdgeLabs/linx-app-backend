@@ -4,7 +4,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_trait::processor::ProcessorTrait;
-use bento_types::{convert_bwe_to_event_models, processors::ProcessorOutput, BlockAndEvents};
+use bento_types::{
+    convert_bwe_to_event_models, processors::ProcessorOutput, repository::insert_events_to_db,
+    BlockAndEvents,
+};
 
 use crate::{config::ProcessorConfig, db::DbPool, ProcessorFactory};
 
@@ -43,12 +46,7 @@ impl ProcessorTrait for EventProcessor {
         &self.connection_pool
     }
 
-    async fn process_blocks(
-        &self,
-        _from: i64,
-        _to: i64,
-        blocks: Vec<BlockAndEvents>,
-    ) -> Result<ProcessorOutput> {
+    async fn process_blocks(&self, blocks: Vec<BlockAndEvents>) -> Result<ProcessorOutput> {
         // Process events and insert to db
         let models = convert_bwe_to_event_models(blocks);
         if !models.is_empty() {
@@ -59,5 +57,17 @@ impl ProcessorTrait for EventProcessor {
             );
         }
         Ok(ProcessorOutput::Event(models))
+    }
+
+    async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
+        match output {
+            ProcessorOutput::Event(events) => {
+                if !events.is_empty() {
+                    insert_events_to_db(self.connection_pool.clone(), events).await?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }

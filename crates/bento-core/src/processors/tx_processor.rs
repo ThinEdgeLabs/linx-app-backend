@@ -4,7 +4,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_trait::processor::ProcessorTrait;
-use bento_types::{convert_bwe_to_tx_models, processors::ProcessorOutput, BlockAndEvents};
+use bento_types::{
+    convert_bwe_to_tx_models, processors::ProcessorOutput, repository::insert_txs_to_db,
+    BlockAndEvents,
+};
 
 use crate::{config::ProcessorConfig, db::DbPool, ProcessorFactory};
 pub fn processor_factory() -> ProcessorFactory {
@@ -42,23 +45,20 @@ impl ProcessorTrait for TxProcessor {
         &self.connection_pool
     }
 
-    async fn process_blocks(
-        &self,
-        _from: i64,
-        _to: i64,
-        blocks: Vec<BlockAndEvents>,
-    ) -> Result<ProcessorOutput> {
+    async fn process_blocks(&self, blocks: Vec<BlockAndEvents>) -> Result<ProcessorOutput> {
         let models = convert_bwe_to_tx_models(blocks);
-        //
-
-        // if !models.is_empty() {
-        //     tracing::info!(
-        //         processor_name = ?self.name(),
-        //         count = ?models.len(),
-        //         "Found models to insert"
-        //     );
-        //     insert_txs_to_db(self.connection_pool.clone(), models).await?;
-        // }
         Ok(ProcessorOutput::Tx(models))
+    }
+
+    async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
+        match output {
+            ProcessorOutput::Tx(models) => {
+                if !models.is_empty() {
+                    insert_txs_to_db(self.connection_pool.clone(), models).await?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }

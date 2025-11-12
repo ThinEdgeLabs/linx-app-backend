@@ -107,12 +107,7 @@ impl ProcessorTrait for LendingContractProcessor {
         &self.connection_pool
     }
 
-    async fn process_blocks(
-        &self,
-        _from: i64,
-        _to: i64,
-        blocks: Vec<BlockAndEvents>,
-    ) -> Result<ProcessorOutput> {
+    async fn process_blocks(&self, blocks: Vec<BlockAndEvents>) -> Result<ProcessorOutput> {
         // Process blocks and convert to models
         let (loan_actions, loan_details) = convert_to_model(blocks, &self.contract_address);
 

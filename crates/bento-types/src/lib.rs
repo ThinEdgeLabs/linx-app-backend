@@ -1,4 +1,3 @@
-pub mod db;
 pub mod errors;
 pub mod models;
 pub mod network;
@@ -6,37 +5,34 @@ pub mod processors;
 pub mod repository;
 pub mod schema;
 pub mod utils;
+
 use std::fmt::Debug;
-
-pub use models::*;
-// Database pool type aliases
-pub type DbPool = Pool<AsyncPgConnection>;
-
-// Database pool connection type aliases
-pub type DbPoolConnection<'a> = PooledConnection<'a, AsyncPgConnection>;
 
 use crate::processors::ProcessorOutput;
 use diesel_async::{
     pooled_connection::bb8::{Pool, PooledConnection},
     AsyncPgConnection,
 };
+pub use models::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+pub type DbPool = Pool<AsyncPgConnection>;
+pub type DbPoolConnection<'a> = PooledConnection<'a, AsyncPgConnection>;
+
 pub const DEFAULT_GROUP_NUM: i64 = 4;
 pub const REORG_TIMEOUT: i64 = 210 * 16 * 1000; // 210 blocks * 16 seconds
+pub const MAX_TIMESTAMP_RANGE: u64 = 1800000;
 
 pub type Event = ContractEventByBlockHash;
 pub type BlockHash = String;
 pub type GroupIndex = i64;
 
-/// Trait for custom processor outputs
 pub trait CustomProcessorOutput: Send + Sync + Debug + 'static {
     fn as_any(&self) -> &dyn std::any::Any;
     fn clone_box(&self) -> Box<dyn CustomProcessorOutput>;
 }
 
-/// Represents the header of a block in a blockchain.
-/// Contains information such as the hash, timestamp, chain range, and block height.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockHeaderEntry {
@@ -51,6 +47,24 @@ pub struct BlockHeaderEntry {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockEntry {
+    pub hash: String,
+    pub timestamp: i64,
+    pub chain_from: i64,
+    pub chain_to: i64,
+    pub height: i64,
+    pub deps: Vec<String>,
+    pub nonce: String,
+    pub version: i8,
+    pub dep_state_hash: String,
+    pub txs_hash: String,
+    pub target: String,
+    pub parent: Option<BlockHash>,
+    pub main_chain: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RichBlockEntry {
     pub hash: String,
     pub timestamp: i64,
     pub chain_from: i64,
@@ -89,7 +103,7 @@ pub struct GhostUncleBlockEntry {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BlocksPerTimestampRange {
-    pub blocks: Vec<Vec<BlockEntry>>, // A list of block entries per timestamp range.
+    pub blocks: Vec<Vec<RichBlockEntry>>, // A list of block entries per timestamp range.
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, ToSchema)]
@@ -112,7 +126,7 @@ pub struct EventField {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockAndEvents {
-    pub block: BlockEntry,                     // The block entry.
+    pub block: RichBlockEntry,                 // The block entry.
     pub events: Vec<ContractEventByBlockHash>, // The list of events associated with the block.
 }
 
@@ -132,6 +146,17 @@ pub struct ContractEventByBlockHash {
     pub fields: Vec<EventField>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Transaction {
+    pub unsigned: UnsignedTx,                // The unsigned transaction.
+    pub script_execution_ok: bool,           // Whether the script execution was successful.
+    pub contract_inputs: Vec<ContractInput>, // The contract inputs associated with the transaction.
+    pub generated_outputs: Vec<Output>,      // The outputs generated from the transaction.
+    pub input_signatures: Vec<String>,       // The signatures of the inputs.
+    pub script_signatures: Vec<String>,      // The script signatures for the transaction.
+}
+
 #[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnsignedTx {
@@ -141,19 +166,8 @@ pub struct UnsignedTx {
     pub script_opt: Option<String>,           // Optional script for the transaction.
     pub gas_amount: i32,                      // The gas amount used for the transaction.
     pub gas_price: String,                    // The price of gas for the transaction.
-    pub inputs: Vec<AssetInput>,              // The inputs of the transaction.
+    pub inputs: Vec<RichAssetInput>,          // The inputs of the transaction.
     pub fixed_outputs: Vec<FixedAssetOutput>, // The fixed outputs of the transaction.
-}
-
-#[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Transaction {
-    pub unsigned: UnsignedTx,            // The unsigned transaction.
-    pub script_execution_ok: bool,       // Whether the script execution was successful.
-    pub contract_inputs: Vec<OutputRef>, // The contract inputs associated with the transaction.
-    pub generated_outputs: Vec<Output>,  // The outputs generated from the transaction.
-    pub input_signatures: Vec<String>,   // The signatures of the inputs.
-    pub script_signatures: Vec<String>,  // The script signatures for the transaction.
 }
 
 #[derive(Deserialize, Debug, Clone, Serialize)]
@@ -163,9 +177,23 @@ pub struct OutputRef {
     pub key: String, // The key for the output reference.
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum OutputType {
+    AssetOutput,
+    ContractOutput,
+}
+
 #[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Output {}
+pub struct Output {
+    #[serde(rename = "type")]
+    pub output_type: OutputType,
+    pub hint: i32,
+    pub key: String,
+    pub atto_alph_amount: String,
+    pub address: String,
+    pub tokens: Vec<Token>,
+}
 
 /// Represents a contract output in a transaction.
 #[derive(Deserialize, Debug)]
@@ -186,18 +214,25 @@ pub struct AssetInput {
     pub unlock_script: String, // The unlock script for the asset input.
 }
 
-/// Represents an asset output in a transaction.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AssetOutput {
+pub struct RichAssetInput {
+    pub hint: i32,
+    pub key: String,
+    pub unlock_script: String,
+    pub atto_alph_amount: String,
+    pub address: String,
+    pub tokens: Vec<Token>,
+}
+
+#[derive(Deserialize, Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractInput {
     pub hint: i32,
     pub key: String,
     pub atto_alph_amount: String,
     pub address: String,
     pub tokens: Vec<Token>,
-    pub lock_time: i64,
-    pub message: String,
-    pub typ: String,
 }
 
 #[derive(Deserialize, Debug, Clone, Serialize)]
@@ -243,36 +278,61 @@ pub enum StageMessage {
     Complete,
 }
 
-pub const MAX_TIMESTAMP_RANGE: i64 = 1800000;
-
-// Message types for different stages
-#[derive(Clone)]
-pub enum FetchStrategy {
-    Simple,
-    Chunked { chunk_size: i64 },
-    Parallel { num_workers: usize },
-}
-
-impl FetchStrategy {
-    pub fn num_workers(&self) -> usize {
-        match self {
-            FetchStrategy::Simple => 1,
-            FetchStrategy::Chunked { chunk_size: _ } => 1,
-            FetchStrategy::Parallel { num_workers } => *num_workers,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct BlockRange {
-    pub from_ts: i64,
-    pub to_ts: i64,
+    pub from_ts: u64,
+    pub to_ts: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct BlockBatch {
     pub blocks: Vec<BlockAndEvents>,
     pub range: BlockRange,
+}
+
+#[derive(Deserialize)]
+pub struct BlockHashesResponse {
+    pub headers: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainInfo {
+    pub current_height: i64,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CallContractParams {
+    pub group: u32,
+    pub world_state_block_hash: Option<String>,
+    pub tx_id: Option<String>,
+    pub address: String,
+    pub method_index: u32,
+    pub args: Option<Vec<serde_json::Value>>,
+    pub interested_contracts: Option<Vec<String>>,
+    pub input_assets: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Deserialize, Debug)]
+pub enum CallContractResultType {
+    CallContractSucceeded,
+    CallContractFailed,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CallContractResult {
+    #[serde(rename = "type")]
+    pub result_type: CallContractResultType,
+    pub error: Option<String>,
+    pub returns: Option<Vec<serde_json::Value>>,
+    pub gas_used: Option<u32>,
+    pub contracts: Option<Vec<serde_json::Value>>,
+    pub tx_inputs: Option<Vec<serde_json::Value>>,
+    pub tx_outputs: Option<Vec<serde_json::Value>>,
+    pub events: Option<Vec<serde_json::Value>>,
+    pub debug_messages: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -321,7 +381,7 @@ mod tests {
             ]
         });
 
-        let block: BlockEntry = serde_json::from_value(json_data).unwrap();
+        let block: RichBlockEntry = serde_json::from_value(json_data).unwrap();
 
         assert_eq!(block.hash, "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
         assert_eq!(block.timestamp, 1672531200);

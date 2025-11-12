@@ -1,0 +1,3 @@
+CREATE INDEX idx_swaps_account_transaction_id ON swaps (account_transaction_id);
+CREATE INDEX idx_transfers_account_transaction_id ON transfers (account_transaction_id);
+CREATE INDEX idx_contract_calls_account_transaction_id ON contract_calls (account_transaction_id);

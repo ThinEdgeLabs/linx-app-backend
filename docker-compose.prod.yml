@@ -1,0 +1,111 @@
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:17
+    container_name: bento-alephium-db
+    <<: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bento_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bento_password}
+      POSTGRES_DB: ${POSTGRES_DB:-bento_db}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-bento_user} -d ${POSTGRES_DB:-bento_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bento-network
+    labels:
+      - "traefik.enable=false"
+
+  indexer:
+    image: indexer:1.0.1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bento-alephium-indexer
+    <<: *default-logging
+    command: /app/bento run worker
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    volumes:
+      - ./examples/linx-indexer/config.toml:/app/config.toml
+    networks:
+      - bento-network
+    labels:
+      - "traefik.enable=false"
+
+  api:
+    image: api:1.0.1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bento-alephium-api
+    <<: *default-logging
+    command: /app/bento run server
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    volumes:
+      - ./examples/linx-indexer/config.toml:/app/config.toml
+    networks:
+      - bento-network
+      - traefik
+    labels:
+      - "traefik.http.routers.bento-api.rule=Host(`api.linxlabs.org`) && PathPrefix(`/v1/account-transactions`) || Host(`bento-alephium.linxlabs.org`)"
+      - "traefik.http.routers.bento-api.entrypoints=websecure"
+      - "traefik.http.services.bento-api.loadbalancer.server.port=8080"
+      - "traefik.http.routers.bento-api.tls.certresolver=cfresolver"
+      - "traefik.http.routers.bento-api.service=bento-api"
+      - "traefik.docker.network=traefik"
+
+  cli:
+    image: cli:1.0.1
+    build:
+      context: .
+      dockerfile: Dockerfile.cli
+    container_name: bento-alephium-cli
+    <<: *default-logging
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./examples/linx-indexer/config.toml:/app/config.toml
+      - ./examples/linx-indexer/migrations:/app/migrations
+      - ./examples/linx-indexer/src/schema.rs:/app/src/schema.rs
+    networks:
+      - bento-network
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  bento-network:
+  traefik:
+    external: true
+    name: traefik
+
+volumes:
+  postgres_data:
+  db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/volume_bento_alephium_data/postgres-data/
+      o: bind

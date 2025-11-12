@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_swaps_account_transaction_id;
+DROP INDEX IF EXISTS idx_transfers_account_transaction_id;
+DROP INDEX IF EXISTS idx_contract_calls_account_transaction_id;

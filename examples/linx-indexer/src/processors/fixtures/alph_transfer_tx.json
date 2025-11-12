@@ -1,0 +1,48 @@
+{
+  "unsigned": {
+    "txId": "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d",
+    "version": 0,
+    "networkId": 0,
+    "scriptOpt": null,
+    "gasAmount": 20000,
+    "gasPrice": "100000000000",
+    "inputs": [
+      {
+        "type": "AssetInput",
+        "hint": 613893291,
+        "key": "47fcfd2c67c00e8ad0c603ca2e1b209954bad2d20731e791de008bfbcdf2ca30",
+        "unlockScript": "0003a6599169c0e82a0c1a5cae26e1f3aeea2d7bd7cf727109acb24e1f90f0b415c3",
+        "attoAlphAmount": "533358519027324543",
+        "address": "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E",
+        "tokens": []
+      }
+    ],
+    "fixedOutputs": [
+      {
+        "hint": -274072735,
+        "key": "a755a079cf4b3214f9cad521c4796eacc4f2121910b465f03cbb3bfe7105434c",
+        "attoAlphAmount": "500000000000000000",
+        "address": "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU",
+        "tokens": [],
+        "lockTime": 0,
+        "message": ""
+      },
+      {
+        "hint": 613893291,
+        "key": "825454b1392247ffecd29f46807d8a4f8938a3e94e672d848019c4592c489b61",
+        "attoAlphAmount": "31358519027324543",
+        "address": "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E",
+        "tokens": [],
+        "lockTime": 0,
+        "message": ""
+      }
+    ]
+  },
+  "scriptExecutionOk": true,
+  "contractInputs": [],
+  "generatedOutputs": [],
+  "inputSignatures": [
+    "d17deedeecab27af0d9bd88999b69aa26756652ce5e96e14bc873ce8776d8d9c6dc9558a948f95c1b24cd04638104b654acc9b29194b1533989b46275a27d884"
+  ],
+  "scriptSignatures": []
+}
