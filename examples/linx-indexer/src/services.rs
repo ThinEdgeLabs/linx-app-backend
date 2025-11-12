@@ -7,5 +7,5 @@ pub use points_calculator_service::*;
 pub mod price {
     pub mod oracle_price_service;
     pub mod linx_price_service;
-    pub mod price_service;
+    pub mod token_service;
 }

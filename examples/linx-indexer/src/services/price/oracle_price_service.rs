@@ -14,6 +14,8 @@ use crate::{
 const TEST_BTC_TOKEN_ID: &str = "0712ee40be418ed0105b1b9c1f255a5e3fa0ef40004f400f216df05eb014c600";
 const TEST_USDT_TOKEN_ID: &str = "79804da1cd63c4575675b6391d956f4745591c65a30aa058ae6bd0a07ce64b00";
 
+const DIA_PRECISION: u32 = 10u32.pow(8);
+
 pub fn dia_token_pairs(network: &Network) -> HashMap<&'static str, &'static str> {
     match network {
         Network::Mainnet => mainnet_dia_token_pairs(),
@@ -141,17 +143,15 @@ impl OraclePriceService {
     /// Get price for a token by its token ID.
     /// Returns (price, timestamp) tuple if the token is supported by the oracle.
     /// Returns error if the token is not supported by the oracle.
-    pub async fn get_token_price(
-        &self,
-        token_id: &str,
-    ) -> anyhow::Result<(BigDecimal, BigDecimal)> {
+    pub async fn get_token_price(&self, token_id: &str) -> anyhow::Result<BigDecimal> {
         // Check if token has a DIA oracle key mapping
         let token_pairs = dia_token_pairs(&self.network);
         let key = token_pairs
             .get(token_id)
             .ok_or_else(|| anyhow::anyhow!("Token {} not supported by DIA oracle", token_id))?;
 
-        self.get_dia_value(key).await
+        let data = self.get_dia_value(key).await?;
+        Ok(data.0 / BigDecimal::from(DIA_PRECISION))
     }
 }
 
@@ -228,9 +228,8 @@ mod tests {
         let result = service.get_token_price(ALPH_TOKEN_ID).await;
 
         assert!(result.is_ok());
-        let (price, timestamp) = result.unwrap();
-        assert_eq!(price.to_string(), "150000000000");
-        assert_eq!(timestamp.to_string(), "1704067200000");
+        let price = result.unwrap();
+        assert_eq!(price.to_string(), "1500");
     }
 
     #[tokio::test]

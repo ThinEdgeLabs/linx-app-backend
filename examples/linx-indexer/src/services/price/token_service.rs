@@ -9,13 +9,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use super::linx_price_service::LinxPriceService;
+use super::linx_price_service::{LinxPriceService, TokenInfo};
 use super::oracle_price_service::OraclePriceService;
 
 #[cfg_attr(test, automock)]
 #[async_trait]
-pub trait PriceServiceTrait {
+pub trait TokenServiceTrait {
     async fn get_token_price(&self, token_id: &str) -> Result<BigDecimal>;
+    async fn get_token_info(&self, token_id: &str) -> Result<TokenInfo>;
+    async fn get_token_decimals(&self, token_id: &str) -> Result<u8>;
 }
 
 #[derive(Clone)]
@@ -24,7 +26,7 @@ struct CachedPrice {
     cached_at: Instant,
 }
 
-pub struct PriceService {
+pub struct TokenService {
     oracle_service: OraclePriceService,
     linx_service: LinxPriceService,
     cache: Arc<RwLock<HashMap<String, CachedPrice>>>,
@@ -32,7 +34,7 @@ pub struct PriceService {
 }
 
 #[cfg_attr(test, automock)]
-impl PriceService {
+impl TokenService {
     pub fn new(network: Network) -> Self {
         let config_path = "config.toml";
         let config = load_config(&config_path).expect("Failed to load config");
@@ -43,10 +45,10 @@ impl PriceService {
             .map(|ps| ps.linx_api_url.clone())
             .expect("price_service config not found in config.toml");
 
-        let oracle_service = OraclePriceService::new(network);
-        let linx_service = LinxPriceService::new(linx_api_url);
+        let oracle_service = OraclePriceService::new(network.clone());
+        let linx_service = LinxPriceService::new(linx_api_url, network);
         let cache = Arc::new(RwLock::new(HashMap::new()));
-        let cache_ttl = Duration::from_secs(300); // 5 minutes
+        let cache_ttl = Duration::from_secs(30); // cache prices for 30 seconds
 
         Self { oracle_service, linx_service, cache, cache_ttl }
     }
@@ -68,7 +70,7 @@ impl PriceService {
 
         // 2. Try oracle first, then fall back to Linx API
         let price = match self.oracle_service.get_token_price(token_id).await {
-            Ok((price, _timestamp)) => {
+            Ok(price) => {
                 tracing::debug!("Fetched price for token {} from oracle", token_id);
                 price
             }
@@ -90,6 +92,16 @@ impl PriceService {
         self.set_cache(token_id, price.clone());
 
         Ok(price)
+    }
+
+    /// Get full token info including metadata and price.
+    pub async fn get_token_info(&self, token_id: &str) -> anyhow::Result<TokenInfo> {
+        self.linx_service.get_token_info(token_id).await
+    }
+
+    /// Get token decimals for amount conversion.
+    pub async fn get_token_decimals(&self, token_id: &str) -> anyhow::Result<u8> {
+        self.linx_service.get_token_decimals(token_id).await
     }
 
     /// Get a price from cache if it exists and is not expired.
@@ -117,9 +129,17 @@ impl PriceService {
 }
 
 #[async_trait]
-impl PriceServiceTrait for PriceService {
+impl TokenServiceTrait for TokenService {
     async fn get_token_price(&self, token_id: &str) -> Result<BigDecimal> {
         self.get_token_price(token_id).await
+    }
+
+    async fn get_token_info(&self, token_id: &str) -> Result<TokenInfo> {
+        self.get_token_info(token_id).await
+    }
+
+    async fn get_token_decimals(&self, token_id: &str) -> Result<u8> {
+        self.get_token_decimals(token_id).await
     }
 }
 
@@ -131,7 +151,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires network access and config
     async fn test_get_token_price_real_integration() {
-        let service = PriceService::new(Network::Mainnet);
+        let service = TokenService::new(Network::Mainnet);
 
         // Test with ALPH (should use oracle)
         let result = service.get_token_price(ALPH_TOKEN_ID).await;
@@ -143,7 +163,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires network access and config
     async fn test_cache_functionality() {
-        let service = PriceService::new(Network::Mainnet);
+        let service = TokenService::new(Network::Mainnet);
 
         // First call - should fetch from API
         let price1 = service.get_token_price(ALPH_TOKEN_ID).await.unwrap();

@@ -2,8 +2,8 @@ use bento_cli::load_config;
 use bento_core::new_db_pool;
 use bento_types::network::Network;
 use chrono::NaiveDate;
-use linx_indexer::services::price::price_service::PriceService;
 use linx_indexer::services::PointsCalculatorService;
+use linx_indexer::services::price::token_service::TokenService;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
         network = config.worker.network.clone().into();
     }
 
-    let price_service = Arc::new(PriceService::new(network));
+    let price_service = Arc::new(TokenService::new(network));
 
     let points_config = config
         .points
@@ -35,9 +35,8 @@ async fn main() -> anyhow::Result<()> {
 
     match std::env::args().nth(1).as_deref() {
         Some("once") => {
-            let date_str = std::env::args()
-                .nth(2)
-                .expect("Usage: points once <date> (format: YYYY-MM-DD)");
+            let date_str =
+                std::env::args().nth(2).expect("Usage: points once <date> (format: YYYY-MM-DD)");
             let date = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
                 .expect("Invalid date format. Use YYYY-MM-DD");
 
@@ -63,17 +62,12 @@ async fn main() -> anyhow::Result<()> {
             }
 
             tracing::info!("Calculating points for range: {} to {}", start_date, end_date);
-            calculator_service
-                .calculate_points_for_range(start_date, end_date)
-                .await?;
+            calculator_service.calculate_points_for_range(start_date, end_date).await?;
             tracing::info!("Points calculation for range completed successfully");
         }
         Some("daemon") => {
             tracing::info!("Starting points calculator daemon...");
-            tracing::info!(
-                "Will calculate points daily at: {}",
-                points_config.calculation_time
-            );
+            tracing::info!("Will calculate points daily at: {}", points_config.calculation_time);
             calculator_service.run_scheduler().await?;
         }
         _ => {
