@@ -10,7 +10,6 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 
-use crate::models::PointsSnapshot;
 use crate::repository::{PointsRepository, PointsRepositoryTrait};
 
 pub struct PointsRouter;

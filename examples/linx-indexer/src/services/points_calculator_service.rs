@@ -523,7 +523,23 @@ where
 
         let mut snapshots = Vec::new();
 
+        // Get the previous day's date to fetch previous snapshots
+        let previous_date = date.pred_opt().context("Failed to get previous date")?;
+
         for activity in user_activities.values() {
+            // Fetch the previous day's snapshot to get cumulative total
+            let previous_total = match self
+                .points_repository
+                .get_snapshot(&activity.address, previous_date)
+                .await?
+            {
+                Some(prev_snapshot) => prev_snapshot.total_points,
+                None => BigDecimal::zero(), // No previous snapshot means this is their first day
+            };
+
+            // Calculate cumulative total: previous total + today's points
+            let cumulative_total = previous_total + &activity.base_points_total;
+
             snapshots.push(NewPointsSnapshot {
                 address: activity.address.clone(),
                 snapshot_date: date,
@@ -535,7 +551,7 @@ where
                 multiplier_value: BigDecimal::zero(),
                 multiplier_points: BigDecimal::zero(),
                 referral_points: BigDecimal::zero(), // TODO: Track referral points separately
-                total_points: activity.base_points_total.clone(),
+                total_points: cumulative_total,
                 total_volume_usd: activity.total_volume_usd.clone(),
             });
         }
@@ -768,6 +784,11 @@ mod tests {
             self
         }
 
+        fn with_no_previous_snapshots(mut self) -> Self {
+            self.points_repo.expect_get_snapshot().returning(|_, _| Ok(None));
+            self
+        }
+
         fn expect_snapshots<F>(mut self, validator: F) -> Self
         where
             F: Fn(&[crate::models::NewPointsSnapshot]) -> bool + Send + 'static,
@@ -888,6 +909,7 @@ mod tests {
             .with_no_supply()
             .with_no_multipliers()
             .with_no_referrals()
+            .with_no_previous_snapshots()
             .expect_snapshots(|snapshots| {
                 snapshots.len() == 2
                     && snapshots
@@ -924,6 +946,7 @@ mod tests {
             .with_swaps_checked_dates(expected_start, expected_end, vec![])
             .with_no_multipliers()
             .with_no_referrals()
+            .with_no_previous_snapshots()
             .expect_snapshots(|snapshots| snapshots.len() == 1)
             .expect_transactions(|txs| txs.len() == 1)
             .build();
@@ -948,6 +971,7 @@ mod tests {
             .with_no_supply()
             .with_no_multipliers()
             .with_no_referrals()
+            .with_no_previous_snapshots()
             .expect_snapshots(|snapshots| {
                 if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
                     s.swap_points == bd("5000")
