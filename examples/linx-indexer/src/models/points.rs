@@ -167,6 +167,8 @@ pub struct PointsTransaction {
     pub points_earned: BigDecimal,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
+    #[schema(value_type = String)]
+    pub snapshot_date: NaiveDate,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -177,4 +179,5 @@ pub struct NewPointsTransaction {
     pub transaction_id: Option<String>,
     pub amount_usd: BigDecimal,
     pub points_earned: BigDecimal,
+    pub snapshot_date: NaiveDate,
 }

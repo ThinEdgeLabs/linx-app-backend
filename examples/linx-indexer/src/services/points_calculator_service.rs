@@ -1,8 +1,9 @@
+use crate::models::LendingEvent;
 use crate::repository::{
     AccountTransactionRepository, AccountTransactionRepositoryTrait, LendingRepository,
     LendingRepositoryTrait, PointsRepository, PointsRepositoryTrait,
 };
-use crate::services::price::price_service::{PriceService, PriceServiceTrait};
+use crate::services::price::token_service::{TokenService, TokenServiceTrait};
 use anyhow::{Context, Result};
 use bento_cli::types::PointsConfig as PointsConfigToml;
 use bento_types::DbPool;
@@ -15,12 +16,12 @@ pub struct PointsCalculatorService<
     PR = PointsRepository,
     LR = LendingRepository,
     ATR = AccountTransactionRepository,
-    PS = PriceService,
+    PS = TokenService,
 > where
     PR: PointsRepositoryTrait,
     LR: LendingRepositoryTrait,
     ATR: AccountTransactionRepositoryTrait,
-    PS: PriceServiceTrait,
+    PS: TokenServiceTrait,
 {
     points_repository: PR,
     lending_repository: LR,
@@ -77,7 +78,7 @@ impl UserDailyActivity {
 impl PointsCalculatorService {
     pub fn new(
         db_pool: Arc<DbPool>,
-        price_service: Arc<PriceService>,
+        price_service: Arc<TokenService>,
         config: PointsConfigToml,
     ) -> Self {
         Self {
@@ -95,7 +96,7 @@ where
     PR: PointsRepositoryTrait,
     LR: LendingRepositoryTrait,
     ATR: AccountTransactionRepositoryTrait,
-    PS: PriceServiceTrait,
+    PS: TokenServiceTrait,
 {
     #[cfg(test)]
     fn new_for_test(
@@ -122,7 +123,7 @@ where
         self.calculate_swap_points(date, &points_config, &mut user_activities).await?;
 
         // 2. Calculate supply points
-        self.calculate_supply_points(date, &points_config, &mut user_activities).await?;
+        // self.calculate_supply_points(date, &points_config, &mut user_activities).await?;
 
         // 3. Calculate borrow points
         self.calculate_borrow_points(date, &points_config, &mut user_activities).await?;
@@ -226,10 +227,27 @@ where
         tracing::info!("Processing {} swaps for date {}", swaps.len(), date);
 
         for swap_tx in swaps {
-            // Convert amount_in to USD
-            let amount_usd = match self.price_service.get_token_price(&swap_tx.swap.token_in).await
+            // Get token info (including decimals and price)
+            let token_info = match self.price_service.get_token_info(&swap_tx.swap.token_in).await {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to get token info for {} in swap {}: {}",
+                        swap_tx.swap.token_in,
+                        swap_tx.swap.tx_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            // Convert raw amount to decimal amount using token decimals
+            let decimal_amount = token_info.convert_to_decimal(&swap_tx.swap.amount_in);
+
+            // Get token price
+            let token_price = match self.price_service.get_token_price(&swap_tx.swap.token_in).await
             {
-                Ok(price) => &swap_tx.swap.amount_in * &price,
+                Ok(price) => price,
                 Err(e) => {
                     tracing::warn!(
                         "Failed to get price for token {} in swap {}: {}",
@@ -240,6 +258,9 @@ where
                     continue;
                 }
             };
+
+            // Calculate USD value
+            let amount_usd = &decimal_amount * &token_price;
 
             // Calculate points
             let points_earned = &amount_usd * points_per_usd;
@@ -357,15 +378,32 @@ where
         );
 
         // Query borrow events for this date
-        let events =
+        let events: Vec<LendingEvent> =
             self.lending_repository.get_borrow_events_in_period(start_time, end_time).await?;
 
         tracing::info!("Processing {} borrow events for date {}", events.len(), date);
 
         for event in events {
-            // Convert amount to USD
-            let amount_usd = match self.price_service.get_token_price(&event.token_id).await {
-                Ok(price) => &event.amount * &price,
+            // Get token info (including decimals and price)
+            let token_info = match self.price_service.get_token_info(&event.token_id).await {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to get token info for {} in borrow event {}: {}",
+                        event.token_id,
+                        event.transaction_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            // Convert raw amount to decimal amount using token decimals
+            let decimal_amount = token_info.convert_to_decimal(&event.amount);
+
+            // Get token price
+            let token_price = match self.price_service.get_token_price(&event.token_id).await {
+                Ok(price) => price,
                 Err(e) => {
                     tracing::warn!(
                         "Failed to get price for token {} in borrow event {}: {}",
@@ -376,6 +414,9 @@ where
                     continue;
                 }
             };
+
+            // Calculate USD value
+            let amount_usd = &decimal_amount * &token_price;
 
             // Calculate points
             let points_earned = &amount_usd * points_per_usd;
@@ -513,6 +554,12 @@ where
     ) -> Result<()> {
         use crate::models::NewPointsTransaction;
 
+        // Delete existing transactions for this date to allow recalculation
+        let deleted_count = self.points_repository.delete_transactions_by_date(date).await?;
+        if deleted_count > 0 {
+            tracing::info!("Deleted {} existing transactions for date {}", deleted_count, date);
+        }
+
         let mut transactions = Vec::new();
 
         for activity in user_activities.values() {
@@ -523,6 +570,7 @@ where
                     transaction_id: tx_detail.transaction_id.clone(),
                     amount_usd: tx_detail.amount_usd.clone(),
                     points_earned: tx_detail.points_earned.clone(),
+                    snapshot_date: date,
                 });
             }
         }
@@ -542,7 +590,8 @@ mod tests {
         MockAccountTransactionRepositoryTrait, MockLendingRepositoryTrait,
         MockPointsRepositoryTrait,
     };
-    use crate::services::price::price_service::MockPriceServiceTrait;
+    use crate::services::price::linx_price_service::TokenInfo;
+    use crate::services::price::token_service::MockTokenServiceTrait;
     use bigdecimal::BigDecimal;
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use mockall::predicate::*;
@@ -553,7 +602,7 @@ mod tests {
         points_repo: MockPointsRepositoryTrait,
         lending_repo: MockLendingRepositoryTrait,
         account_repo: MockAccountTransactionRepositoryTrait,
-        price_service: MockPriceServiceTrait,
+        price_service: MockTokenServiceTrait,
     }
 
     impl TestSetup {
@@ -562,7 +611,7 @@ mod tests {
                 points_repo: MockPointsRepositoryTrait::new(),
                 lending_repo: MockLendingRepositoryTrait::new(),
                 account_repo: MockAccountTransactionRepositoryTrait::new(),
-                price_service: MockPriceServiceTrait::new(),
+                price_service: MockTokenServiceTrait::new(),
             }
         }
 
@@ -657,6 +706,36 @@ mod tests {
             self
         }
 
+        fn with_token_info(mut self, token_id: &'static str, decimals: u8, price: &str) -> Self {
+            let token_id_owned = token_id.to_string();
+            let price_value = price.parse::<f64>().unwrap();
+
+            // Mock get_token_info - allow multiple calls
+            self.price_service.expect_get_token_info().with(eq(token_id)).times(..).returning(
+                move |_| {
+                    Ok(TokenInfo {
+                        id: token_id_owned.clone(),
+                        name: "Test Token".to_string(),
+                        symbol: "TEST".to_string(),
+                        decimals,
+                        description: "".to_string(),
+                        logo_uri: "".to_string(),
+                        price_usd: price_value,
+                    })
+                },
+            );
+
+            // Also mock get_token_price for the same token - allow multiple calls
+            let price_bd = BigDecimal::from_str(price).unwrap();
+            self.price_service
+                .expect_get_token_price()
+                .with(eq(token_id))
+                .times(..)
+                .returning(move |_| Ok(price_bd.clone()));
+
+            self
+        }
+
         fn with_no_swaps(mut self) -> Self {
             self.account_repo.expect_get_swaps_in_period().returning(|_, _| Ok(vec![]));
             self
@@ -701,6 +780,9 @@ mod tests {
         where
             F: Fn(&[crate::models::NewPointsTransaction]) -> bool + Send + 'static,
         {
+            // Mock delete_transactions_by_date - allow it to be called
+            self.points_repo.expect_delete_transactions_by_date().returning(|_| Ok(0));
+
             self.points_repo.expect_insert_transactions().withf(validator).returning(|_| Ok(()));
             self
         }
@@ -711,7 +793,7 @@ mod tests {
             MockPointsRepositoryTrait,
             MockLendingRepositoryTrait,
             MockAccountTransactionRepositoryTrait,
-            MockPriceServiceTrait,
+            MockTokenServiceTrait,
         > {
             let config = PointsConfigToml {
                 referral_percentage: 0.05,
@@ -800,8 +882,8 @@ mod tests {
         let service = TestSetup::new()
             .with_borrow_config("2.0")
             .with_borrow_events(events)
-            .with_token_price("tokenA", "10")
-            .with_token_price("tokenB", "5")
+            .with_token_info("tokenA", 0, "10") // 0 decimals means amount is already in decimal form
+            .with_token_info("tokenB", 0, "5")
             .with_no_swaps()
             .with_no_supply()
             .with_no_multipliers()
@@ -837,7 +919,7 @@ mod tests {
         let service = TestSetup::new()
             .with_borrow_config("2.0")
             .with_borrow_events_checked_dates(expected_start, expected_end, events)
-            .with_token_price("tokenA", "10")
+            .with_token_info("tokenA", 0, "10")
             .with_no_supply_checked_dates(expected_start, expected_end)
             .with_swaps_checked_dates(expected_start, expected_end, vec![])
             .with_no_multipliers()
@@ -862,7 +944,7 @@ mod tests {
             .with_swap_and_borrow_config("1.0", "2.0")
             .with_swaps(vec![swap_event("user1", "tokenA", "500", time)])
             .with_borrow_events(vec![borrow_event("user1", "tokenA", "100", time)])
-            .with_token_price("tokenA", "10")
+            .with_token_info("tokenA", 0, "10")
             .with_no_supply()
             .with_no_multipliers()
             .with_no_referrals()

@@ -181,6 +181,7 @@ diesel::table! {
         amount_usd -> Numeric,
         points_earned -> Numeric,
         created_at -> Timestamp,
+        snapshot_date -> Date,
     }
 }
 

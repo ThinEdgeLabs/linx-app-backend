@@ -107,6 +107,7 @@ pub trait PointsRepositoryTrait {
         &self,
         transaction: NewPointsTransaction,
     ) -> Result<PointsTransaction>;
+    async fn delete_transactions_by_date(&self, snapshot_date: NaiveDate) -> Result<u64>;
 }
 
 pub struct PointsRepository {
@@ -379,13 +380,35 @@ impl PointsRepositoryTrait for PointsRepository {
 
         let mut conn = self.db_pool.get().await?;
 
+        // Use do_update instead of do_nothing to allow recalculation
         diesel::insert_into(schema::points_snapshots::table)
             .values(snapshots)
             .on_conflict((
                 schema::points_snapshots::address,
                 schema::points_snapshots::snapshot_date,
             ))
-            .do_nothing()
+            .do_update()
+            .set((
+                schema::points_snapshots::swap_points.eq(diesel::dsl::sql("EXCLUDED.swap_points")),
+                schema::points_snapshots::supply_points
+                    .eq(diesel::dsl::sql("EXCLUDED.supply_points")),
+                schema::points_snapshots::borrow_points
+                    .eq(diesel::dsl::sql("EXCLUDED.borrow_points")),
+                schema::points_snapshots::base_points_total
+                    .eq(diesel::dsl::sql("EXCLUDED.base_points_total")),
+                schema::points_snapshots::multiplier_type
+                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_type")),
+                schema::points_snapshots::multiplier_value
+                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_value")),
+                schema::points_snapshots::multiplier_points
+                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_points")),
+                schema::points_snapshots::referral_points
+                    .eq(diesel::dsl::sql("EXCLUDED.referral_points")),
+                schema::points_snapshots::total_points
+                    .eq(diesel::dsl::sql("EXCLUDED.total_points")),
+                schema::points_snapshots::total_volume_usd
+                    .eq(diesel::dsl::sql("EXCLUDED.total_volume_usd")),
+            ))
             .execute(&mut conn)
             .await?;
 
@@ -508,5 +531,16 @@ impl PointsRepositoryTrait for PointsRepository {
                 .await?;
 
         Ok(inserted_transaction)
+    }
+
+    async fn delete_transactions_by_date(&self, snapshot_date: NaiveDate) -> Result<u64> {
+        let mut conn = self.db_pool.get().await?;
+
+        let deleted_count = diesel::delete(schema::points_transactions::table)
+            .filter(schema::points_transactions::snapshot_date.eq(snapshot_date))
+            .execute(&mut conn)
+            .await?;
+
+        Ok(deleted_count as u64)
     }
 }
