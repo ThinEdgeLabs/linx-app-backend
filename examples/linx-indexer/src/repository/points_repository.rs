@@ -357,13 +357,28 @@ impl PointsRepositoryTrait for PointsRepository {
     ) -> Result<Vec<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
-        let mut query = schema::points_snapshots::table.into_boxed();
+        // Determine which date to query
+        let date_to_query = match snapshot_date {
+            Some(date) => date,
+            None => {
+                // Get the latest snapshot date
+                let latest_date: Option<NaiveDate> = schema::points_snapshots::table
+                    .select(schema::points_snapshots::snapshot_date)
+                    .order(schema::points_snapshots::snapshot_date.desc())
+                    .first(&mut conn)
+                    .await
+                    .optional()?;
 
-        if let Some(date) = snapshot_date {
-            query = query.filter(schema::points_snapshots::snapshot_date.eq(date));
-        }
+                match latest_date {
+                    Some(date) => date,
+                    None => return Ok(vec![]), // No snapshots exist
+                }
+            }
+        };
 
-        let snapshots: Vec<PointsSnapshot> = query
+        // Query snapshots for the determined date, ordered by total_points
+        let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
+            .filter(schema::points_snapshots::snapshot_date.eq(date_to_query))
             .order(schema::points_snapshots::total_points.desc())
             .offset((page - 1) * limit)
             .limit(limit)
