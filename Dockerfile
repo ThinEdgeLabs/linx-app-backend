@@ -26,7 +26,7 @@ COPY examples/linx-indexer ./examples/linx-indexer
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
-    cp /app/target/release/bento /app/bento
+    cp /app/target/release/cli /app/cli
 
 # Create final lightweight image
 FROM debian:bookworm-slim
@@ -42,7 +42,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy binaries from workspace target directory
-COPY --from=builder /app/bento /app/
+COPY --from=builder /app/cli /app/
 
 # Default command will be overridden in docker-compose.yml
-CMD ["./bento"]
+CMD ["./cli"]
