@@ -24,7 +24,8 @@ COPY examples/linx-indexer ./examples/linx-indexer
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
-    cp /app/target/release/bento /app/bento
+    cp /app/target/release/cli /app/cli && \
+    cp /app/target/release/points /app/points
 
 RUN cargo install diesel_cli --no-default-features --features postgres
 

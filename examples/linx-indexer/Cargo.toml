@@ -1,10 +1,10 @@
 [package]
 name = "linx-indexer"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 
 [[bin]]
-name = "bento"
+name = "cli"
 path = "src/bin/main.rs"
 
 [[bin]]
