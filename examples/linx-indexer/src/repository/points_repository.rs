@@ -75,6 +75,8 @@ pub trait PointsRepositoryTrait {
 
     async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>>;
 
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate) -> Result<Vec<PointsSnapshot>>;
+
     async fn get_leaderboard(
         &self,
         snapshot_date: Option<NaiveDate>,
@@ -347,6 +349,17 @@ impl PointsRepositoryTrait for PointsRepository {
             .optional()?;
 
         Ok(snapshot)
+    }
+
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate) -> Result<Vec<PointsSnapshot>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
+            .filter(schema::points_snapshots::snapshot_date.eq(snapshot_date))
+            .load(&mut conn)
+            .await?;
+
+        Ok(snapshots)
     }
 
     async fn get_leaderboard(

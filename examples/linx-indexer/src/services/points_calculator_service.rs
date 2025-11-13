@@ -514,6 +514,9 @@ where
     }
 
     /// Store daily snapshots in database
+    /// Creates snapshots for all users:
+    /// - Users with activity today: new snapshot with updated points
+    /// - Users without activity today: copy of their latest snapshot with same total_points
     async fn store_snapshots(
         &self,
         date: NaiveDate,
@@ -526,6 +529,7 @@ where
         // Get the previous day's date to fetch previous snapshots
         let previous_date = date.pred_opt().context("Failed to get previous date")?;
 
+        // Step 1: Create snapshots for users with activity today
         for activity in user_activities.values() {
             // Fetch the previous day's snapshot to get cumulative total
             let previous_total = match self
@@ -556,9 +560,44 @@ where
             });
         }
 
+        // Step 2: Get all users who had snapshots on the previous day but no activity today
+        let all_previous_snapshots = self
+            .points_repository
+            .get_snapshots_by_date(previous_date)
+            .await?;
+
+        for prev_snapshot in all_previous_snapshots {
+            // Skip users who already have activity today
+            if user_activities.contains_key(&prev_snapshot.address) {
+                continue;
+            }
+
+            // Copy the previous snapshot with the new date (no new points earned)
+            snapshots.push(NewPointsSnapshot {
+                address: prev_snapshot.address,
+                snapshot_date: date,
+                swap_points: BigDecimal::zero(), // No new activity today
+                supply_points: BigDecimal::zero(),
+                borrow_points: BigDecimal::zero(),
+                base_points_total: BigDecimal::zero(),
+                multiplier_type: prev_snapshot.multiplier_type,
+                multiplier_value: prev_snapshot.multiplier_value,
+                multiplier_points: BigDecimal::zero(),
+                referral_points: BigDecimal::zero(),
+                total_points: prev_snapshot.total_points, // Carry forward cumulative total
+                total_volume_usd: BigDecimal::zero(), // No new volume today
+            });
+        }
+
         self.points_repository.insert_snapshots(&snapshots).await?;
 
-        tracing::info!("Stored {} snapshots for date {}", snapshots.len(), date);
+        tracing::info!(
+            "Stored {} snapshots for date {} ({} with activity, {} carried forward)",
+            snapshots.len(),
+            date,
+            user_activities.len(),
+            snapshots.len() - user_activities.len()
+        );
         Ok(())
     }
 
@@ -791,6 +830,7 @@ mod tests {
 
         fn with_no_previous_snapshots(mut self) -> Self {
             self.points_repo.expect_get_snapshot().returning(|_, _| Ok(None));
+            self.points_repo.expect_get_snapshots_by_date().returning(|_| Ok(vec![]));
             self
         }
 
