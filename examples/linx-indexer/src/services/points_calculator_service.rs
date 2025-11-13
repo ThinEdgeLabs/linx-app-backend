@@ -570,6 +570,11 @@ where
     ) -> Result<()> {
         use crate::models::NewPointsTransaction;
 
+        if user_activities.is_empty() {
+            tracing::info!("No user activities to store transactions for date {}", date);
+            return Ok(());
+        }
+
         // Delete existing transactions for this date to allow recalculation
         let deleted_count = self.points_repository.delete_transactions_by_date(date).await?;
         if deleted_count > 0 {
