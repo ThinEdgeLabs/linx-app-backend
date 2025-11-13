@@ -1,7 +1,13 @@
-.PHONY: build start stop cli help
+.PHONY: build start stop cli db help
 
 # Default target
 .DEFAULT_GOAL := help
+
+# Load environment variables from .env file
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
 # Build all Docker images
 build:
@@ -24,6 +30,11 @@ cli:
 	@echo "Connecting to CLI container..."
 	docker compose -f docker-compose.prod.yml exec cli bash
 
+# Connect to PostgreSQL database
+db:
+	@echo "Connecting to database..."
+	@docker compose -f docker-compose.prod.yml exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+
 # Show help
 help:
 	@echo "Available commands:"
@@ -31,3 +42,4 @@ help:
 	@echo "  make start  - Start all services (db, indexer, api, cli)"
 	@echo "  make stop   - Stop all services"
 	@echo "  make cli    - Access CLI container interactively"
+	@echo "  make db     - Connect to PostgreSQL database"
