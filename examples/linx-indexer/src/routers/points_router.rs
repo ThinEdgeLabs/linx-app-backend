@@ -5,7 +5,6 @@ use axum::{
     routing::get,
 };
 use bento_server::{AppState, error::AppError};
-use bigdecimal::BigDecimal;
 use serde::Serialize;
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
@@ -29,14 +28,12 @@ impl PointsRouter {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LeaderboardEntry {
     pub user: String,
-    #[schema(value_type = String)]
-    pub points: BigDecimal,
+    pub points: i32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserPointsResponse {
-    #[schema(value_type = String)]
-    pub points: BigDecimal,
+    pub points: i32,
     pub rank: i64,
 }
 

@@ -140,23 +140,16 @@ pub struct PointsSnapshot {
     pub address: String,
     #[schema(value_type = String)]
     pub snapshot_date: NaiveDate,
-    #[schema(value_type = String)]
-    pub swap_points: BigDecimal,
-    #[schema(value_type = String)]
-    pub supply_points: BigDecimal,
-    #[schema(value_type = String)]
-    pub borrow_points: BigDecimal,
-    #[schema(value_type = String)]
-    pub base_points_total: BigDecimal,
+    pub swap_points: i32,
+    pub supply_points: i32,
+    pub borrow_points: i32,
+    pub base_points_total: i32,
     pub multiplier_type: Option<String>,
     #[schema(value_type = String)]
     pub multiplier_value: BigDecimal,
-    #[schema(value_type = String)]
-    pub multiplier_points: BigDecimal,
-    #[schema(value_type = String)]
-    pub referral_points: BigDecimal,
-    #[schema(value_type = String)]
-    pub total_points: BigDecimal,
+    pub multiplier_points: i32,
+    pub referral_points: i32,
+    pub total_points: i32,
     #[schema(value_type = String)]
     pub total_volume_usd: BigDecimal,
     #[schema(value_type = String)]
@@ -169,15 +162,15 @@ pub struct PointsSnapshot {
 pub struct NewPointsSnapshot {
     pub address: String,
     pub snapshot_date: NaiveDate,
-    pub swap_points: BigDecimal,
-    pub supply_points: BigDecimal,
-    pub borrow_points: BigDecimal,
-    pub base_points_total: BigDecimal,
+    pub swap_points: i32,
+    pub supply_points: i32,
+    pub borrow_points: i32,
+    pub base_points_total: i32,
     pub multiplier_type: Option<String>,
     pub multiplier_value: BigDecimal,
-    pub multiplier_points: BigDecimal,
-    pub referral_points: BigDecimal,
-    pub total_points: BigDecimal,
+    pub multiplier_points: i32,
+    pub referral_points: i32,
+    pub total_points: i32,
     pub total_volume_usd: BigDecimal,
     pub season_id: i32,
 }
@@ -194,8 +187,7 @@ pub struct PointsTransaction {
     pub transaction_id: Option<String>,
     #[schema(value_type = String)]
     pub amount_usd: BigDecimal,
-    #[schema(value_type = String)]
-    pub points_earned: BigDecimal,
+    pub points_earned: i32,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
     #[schema(value_type = String)]
@@ -210,7 +202,7 @@ pub struct NewPointsTransaction {
     pub action_type: String,
     pub transaction_id: Option<String>,
     pub amount_usd: BigDecimal,
-    pub points_earned: BigDecimal,
+    pub points_earned: i32,
     pub snapshot_date: NaiveDate,
     pub season_id: i32,
 }

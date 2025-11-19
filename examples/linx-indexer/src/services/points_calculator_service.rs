@@ -7,7 +7,7 @@ use crate::services::price::token_service::{TokenService, TokenServiceTrait};
 use anyhow::{Context, Result};
 use bento_cli::types::PointsConfig as PointsConfigToml;
 use bento_types::DbPool;
-use bigdecimal::{BigDecimal, Zero};
+use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,13 +33,13 @@ pub struct PointsCalculatorService<
 #[derive(Debug, Clone)]
 struct UserDailyActivity {
     address: String,
-    swap_points: BigDecimal,
+    swap_points: i32,
     swap_volume_usd: BigDecimal,
-    supply_points: BigDecimal,
+    supply_points: i32,
     supply_volume_usd: BigDecimal,
-    borrow_points: BigDecimal,
+    borrow_points: i32,
     borrow_volume_usd: BigDecimal,
-    base_points_total: BigDecimal,
+    base_points_total: i32,
     total_volume_usd: BigDecimal,
     transactions: Vec<TransactionDetail>,
 }
@@ -49,27 +49,27 @@ struct TransactionDetail {
     action_type: String,
     transaction_id: Option<String>,
     amount_usd: BigDecimal,
-    points_earned: BigDecimal,
+    points_earned: i32,
 }
 
 impl UserDailyActivity {
     fn new(address: String) -> Self {
         Self {
             address,
-            swap_points: BigDecimal::zero(),
+            swap_points: 0,
             swap_volume_usd: BigDecimal::zero(),
-            supply_points: BigDecimal::zero(),
+            supply_points: 0,
             supply_volume_usd: BigDecimal::zero(),
-            borrow_points: BigDecimal::zero(),
+            borrow_points: 0,
             borrow_volume_usd: BigDecimal::zero(),
-            base_points_total: BigDecimal::zero(),
+            base_points_total: 0,
             total_volume_usd: BigDecimal::zero(),
             transactions: Vec::new(),
         }
     }
 
     fn finalize(&mut self) {
-        self.base_points_total = &self.swap_points + &self.supply_points + &self.borrow_points;
+        self.base_points_total = self.swap_points + self.supply_points + self.borrow_points;
         self.total_volume_usd =
             &self.swap_volume_usd + &self.supply_volume_usd + &self.borrow_volume_usd;
     }
@@ -114,7 +114,10 @@ where
         tracing::info!("Starting points calculation for date: {}", date);
 
         // Fetch active season
-        let active_season = self.points_repository.get_active_season().await?
+        let active_season = self
+            .points_repository
+            .get_active_season()
+            .await?
             .context("No active season found. Cannot calculate points.")?;
 
         tracing::info!("Using season {} for calculation", active_season.season_number);
@@ -268,8 +271,9 @@ where
             // Calculate USD value
             let amount_usd = &decimal_amount * &token_price;
 
-            // Calculate points
-            let points_earned = &amount_usd * points_per_usd;
+            // Calculate points (convert to i32 by rounding)
+            let points_earned_decimal = &amount_usd * points_per_usd;
+            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
 
             // Get or create user activity
             let activity =
@@ -277,7 +281,7 @@ where
                     || UserDailyActivity::new(swap_tx.account_transaction.address.clone()),
                 );
 
-            activity.swap_points += &points_earned;
+            activity.swap_points += points_earned;
             activity.swap_volume_usd += &amount_usd;
             activity.transactions.push(TransactionDetail {
                 action_type: "swap".to_string(),
@@ -332,15 +336,16 @@ where
             // Use amount_usd from snapshot
             let amount_usd = snapshot.amount_usd;
 
-            // Calculate points
-            let points_earned = &amount_usd * points_per_usd_per_day;
+            // Calculate points (convert to i32 by rounding)
+            let points_earned_decimal = &amount_usd * points_per_usd_per_day;
+            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
 
             // Get or create user activity
             let activity = user_activities
                 .entry(snapshot.address.clone())
                 .or_insert_with(|| UserDailyActivity::new(snapshot.address.clone()));
 
-            activity.supply_points += &points_earned;
+            activity.supply_points += points_earned;
             activity.supply_volume_usd += &amount_usd;
             activity.transactions.push(TransactionDetail {
                 action_type: "supply".to_string(),
@@ -424,15 +429,16 @@ where
             // Calculate USD value
             let amount_usd = &decimal_amount * &token_price;
 
-            // Calculate points
-            let points_earned = &amount_usd * points_per_usd;
+            // Calculate points (convert to i32 by rounding)
+            let points_earned_decimal = &amount_usd * points_per_usd;
+            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
 
             // Get or create user activity
             let activity = user_activities
                 .entry(event.on_behalf.clone())
                 .or_insert_with(|| UserDailyActivity::new(event.on_behalf.clone()));
 
-            activity.borrow_points += &points_earned;
+            activity.borrow_points += points_earned;
             activity.borrow_volume_usd += &amount_usd;
             activity.transactions.push(TransactionDetail {
                 action_type: "borrow".to_string(),
@@ -470,7 +476,10 @@ where
 
             // Apply the multiplier if found
             if let Some(multiplier) = best_multiplier {
-                let multiplier_points = &activity.base_points_total * &multiplier.multiplier;
+                // Convert base_points_total to BigDecimal, multiply, then round back to i32
+                let base_points_bd = BigDecimal::from(activity.base_points_total);
+                let multiplier_points_decimal = &base_points_bd * &multiplier.multiplier;
+                let multiplier_points = multiplier_points_decimal.round(0).to_i32().unwrap_or(0);
                 activity.base_points_total += multiplier_points;
             }
         }
@@ -498,22 +507,25 @@ where
 
         // Calculate referral points for each referrer
         for (referrer_address, referred_users) in referrals_by_referrer {
-            let mut total_referred_points = BigDecimal::zero();
+            let mut total_referred_points = 0i32;
 
             for referred_user in referred_users {
                 if let Some(referred_activity) = user_activities.get(&referred_user) {
-                    total_referred_points += &referred_activity.base_points_total;
+                    total_referred_points += referred_activity.base_points_total;
                 }
             }
 
-            let referral_points = total_referred_points * &referral_percentage;
+            // Calculate referral points as percentage of total referred points
+            let total_referred_bd = BigDecimal::from(total_referred_points);
+            let referral_points_decimal = total_referred_bd * &referral_percentage;
+            let referral_points = referral_points_decimal.round(0).to_i32().unwrap_or(0);
 
             // Add referral points to referrer
             let referrer_activity = user_activities
                 .entry(referrer_address.clone())
                 .or_insert_with(|| UserDailyActivity::new(referrer_address.clone()));
 
-            referrer_activity.base_points_total += &referral_points;
+            referrer_activity.base_points_total += referral_points;
         }
 
         Ok(())
@@ -545,23 +557,23 @@ where
                 .await?
             {
                 Some(prev_snapshot) => prev_snapshot.total_points,
-                None => BigDecimal::zero(), // No previous snapshot means this is their first day
+                None => 0, // No previous snapshot means this is their first day
             };
 
             // Calculate cumulative total: previous total + today's points
-            let cumulative_total = previous_total + &activity.base_points_total;
+            let cumulative_total = previous_total + activity.base_points_total;
 
             snapshots.push(NewPointsSnapshot {
                 address: activity.address.clone(),
                 snapshot_date: date,
-                swap_points: activity.swap_points.clone(),
-                supply_points: activity.supply_points.clone(),
-                borrow_points: activity.borrow_points.clone(),
-                base_points_total: activity.base_points_total.clone(),
+                swap_points: activity.swap_points,
+                supply_points: activity.supply_points,
+                borrow_points: activity.borrow_points,
+                base_points_total: activity.base_points_total,
                 multiplier_type: None, // TODO: Track which multiplier was applied
                 multiplier_value: BigDecimal::zero(),
-                multiplier_points: BigDecimal::zero(),
-                referral_points: BigDecimal::zero(), // TODO: Track referral points separately
+                multiplier_points: 0,
+                referral_points: 0, // TODO: Track referral points separately
                 total_points: cumulative_total,
                 total_volume_usd: activity.total_volume_usd.clone(),
                 season_id,
@@ -569,10 +581,8 @@ where
         }
 
         // Step 2: Get all users who had snapshots on the previous day but no activity today
-        let all_previous_snapshots = self
-            .points_repository
-            .get_snapshots_by_date(previous_date, season_id)
-            .await?;
+        let all_previous_snapshots =
+            self.points_repository.get_snapshots_by_date(previous_date, season_id).await?;
 
         for prev_snapshot in all_previous_snapshots {
             // Skip users who already have activity today
@@ -584,16 +594,16 @@ where
             snapshots.push(NewPointsSnapshot {
                 address: prev_snapshot.address,
                 snapshot_date: date,
-                swap_points: BigDecimal::zero(), // No new activity today
-                supply_points: BigDecimal::zero(),
-                borrow_points: BigDecimal::zero(),
-                base_points_total: BigDecimal::zero(),
+                swap_points: 0, // No new activity today
+                supply_points: 0,
+                borrow_points: 0,
+                base_points_total: 0,
                 multiplier_type: prev_snapshot.multiplier_type,
                 multiplier_value: prev_snapshot.multiplier_value,
-                multiplier_points: BigDecimal::zero(),
-                referral_points: BigDecimal::zero(),
+                multiplier_points: 0,
+                referral_points: 0,
                 total_points: prev_snapshot.total_points, // Carry forward cumulative total
-                total_volume_usd: BigDecimal::zero(), // No new volume today
+                total_volume_usd: BigDecimal::zero(),     // No new volume today
                 season_id,
             });
         }
@@ -927,10 +937,6 @@ mod tests {
         }
     }
 
-    fn bd(s: &str) -> BigDecimal {
-        BigDecimal::from_str(s).unwrap()
-    }
-
     fn swap_event(
         address: &str,
         token_in: &str,
@@ -987,12 +993,12 @@ mod tests {
             .with_active_season(1)
             .expect_snapshots(|snapshots| {
                 snapshots.len() == 2
-                    && snapshots
-                        .iter()
-                        .any(|s| s.address == "user1" && s.borrow_points == bd("3000") && s.season_id == 1)
-                    && snapshots
-                        .iter()
-                        .any(|s| s.address == "user2" && s.borrow_points == bd("2000") && s.season_id == 1)
+                    && snapshots.iter().any(|s| {
+                        s.address == "user1" && s.borrow_points == 3000 && s.season_id == 1
+                    })
+                    && snapshots.iter().any(|s| {
+                        s.address == "user2" && s.borrow_points == 2000 && s.season_id == 1
+                    })
             })
             .expect_transactions(|txs| txs.len() == 3)
             .build();
@@ -1051,9 +1057,9 @@ mod tests {
             .with_active_season(1)
             .expect_snapshots(|snapshots| {
                 if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
-                    s.swap_points == bd("5000")
-                        && s.borrow_points == bd("2000")
-                        && s.base_points_total == bd("7000")
+                    s.swap_points == 5000
+                        && s.borrow_points == 2000
+                        && s.base_points_total == 7000
                         && s.season_id == 1
                 } else {
                     false
