@@ -8,7 +8,7 @@ use diesel_async::{
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use futures_util::{future::BoxFuture, FutureExt};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../bento-types/migrations");
 pub const DEFAULT_MAX_POOL_SIZE: u32 = 150;
@@ -82,6 +82,7 @@ pub async fn new_db_pool(
     };
     let pool = Pool::builder()
         .max_size(max_pool_size.unwrap_or(DEFAULT_MAX_POOL_SIZE))
+        .connection_timeout(Duration::from_secs(5))
         .build(config)
         .await?;
 

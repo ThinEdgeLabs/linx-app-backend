@@ -92,16 +92,11 @@ pub async fn get_user_points_handler(
     Path(address): Path<String>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Create repository
     let repo = PointsRepository::new(state.db.clone());
-
-    // Fetch latest user points
     let snapshot = repo.get_latest_snapshot(&address).await?;
 
     match snapshot {
         Some(snapshot) => Ok(Json(UserPointsResponse { points: snapshot.total_points })),
-        None => {
-            Err(AppError::NotFound(format!("No points snapshot found for address {}", address)))
-        }
+        None => Err(AppError::NotFound(format!("No points found for address {}", address))),
     }
 }
