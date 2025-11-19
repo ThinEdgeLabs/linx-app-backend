@@ -18,7 +18,7 @@ impl PointsRouter {
     pub fn register() -> OpenApiRouter<AppState> {
         OpenApiRouter::new()
             .route("/points/leaderboard", get(get_leaderboard_handler))
-            .route("/points/user/{address}", get(get_user_points_handler))
+            .route("/points/{address}", get(get_user_points_handler))
     }
 }
 
@@ -34,7 +34,7 @@ pub struct LeaderboardEntry {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserPointsResponse {
     #[schema(value_type = String)]
-    pub total_points: BigDecimal,
+    pub points: BigDecimal,
 }
 
 // ==================== Handler Functions ====================
@@ -77,7 +77,7 @@ pub async fn get_leaderboard_handler(
 /// Returns the total points for a specific user address from the latest snapshot.
 #[utoipa::path(
     get,
-    path = "/points/user/{address}",
+    path = "/points/{address}",
     tag = "Points",
     params(
         ("address" = String, Path, description = "User wallet address")
@@ -99,7 +99,7 @@ pub async fn get_user_points_handler(
     let snapshot = repo.get_latest_snapshot(&address).await?;
 
     match snapshot {
-        Some(snapshot) => Ok(Json(UserPointsResponse { total_points: snapshot.total_points })),
+        Some(snapshot) => Ok(Json(UserPointsResponse { points: snapshot.total_points })),
         None => {
             Err(AppError::NotFound(format!("No points snapshot found for address {}", address)))
         }
