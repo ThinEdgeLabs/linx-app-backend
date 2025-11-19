@@ -154,6 +154,18 @@ diesel::table! {
 }
 
 diesel::table! {
+    points_seasons (id) {
+        id -> Int4,
+        season_number -> Int4,
+        start_date -> Date,
+        end_date -> Date,
+        max_tokens_distribution -> Numeric,
+        is_active -> Bool,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     points_snapshots (id) {
         id -> Int4,
         address -> Text,
@@ -169,6 +181,7 @@ diesel::table! {
         total_points -> Numeric,
         total_volume_usd -> Numeric,
         created_at -> Timestamp,
+        season_id -> Int4,
     }
 }
 
@@ -182,6 +195,7 @@ diesel::table! {
         points_earned -> Numeric,
         created_at -> Timestamp,
         snapshot_date -> Date,
+        season_id -> Int4,
     }
 }
 
@@ -264,6 +278,8 @@ diesel::table! {
 }
 
 diesel::joinable!(contract_calls -> account_transactions (account_transaction_id));
+diesel::joinable!(points_snapshots -> points_seasons (season_id));
+diesel::joinable!(points_transactions -> points_seasons (season_id));
 diesel::joinable!(swaps -> account_transactions (account_transaction_id));
 diesel::joinable!(transfers -> account_transactions (account_transaction_id));
 
@@ -280,6 +296,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     loan_details,
     points_config,
     points_multipliers,
+    points_seasons,
     points_snapshots,
     points_transactions,
     pools,

@@ -12,8 +12,8 @@ use mockall::automock;
 use crate::{
     models::{
         NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewPointsTransaction,
-        NewReferralCode, NewUserReferral, PointsConfig, PointsMultiplier, PointsSnapshot,
-        PointsTransaction, ReferralCode, UserReferral,
+        NewReferralCode, NewSeason, NewUserReferral, PointsConfig, PointsMultiplier,
+        PointsSnapshot, PointsTransaction, ReferralCode, Season, UserReferral,
     },
     schema,
 };
@@ -58,29 +58,42 @@ pub trait PointsRepositoryTrait {
 
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral>;
 
+    // ==================== Seasons ====================
+
+    async fn get_active_season(&self) -> Result<Option<Season>>;
+
+    async fn get_season_by_id(&self, id: i32) -> Result<Option<Season>>;
+
+    async fn create_season(&self, season: NewSeason) -> Result<Season>;
+
+    async fn activate_season(&self, season_id: i32) -> Result<()>;
+
     // ==================== Points Snapshots ====================
 
     async fn get_snapshot(
         &self,
         address: &str,
         snapshot_date: NaiveDate,
+        season_id: i32,
     ) -> Result<Option<PointsSnapshot>>;
 
     async fn get_user_snapshots(
         &self,
         address: &str,
+        season_id: i32,
         page: i64,
         limit: i64,
     ) -> Result<Vec<PointsSnapshot>>;
 
-    async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>>;
+    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>>;
 
-    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate) -> Result<Vec<PointsSnapshot>>;
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>>;
 
     async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64>;
 
     async fn get_leaderboard(
         &self,
+        season_id: i32,
         snapshot_date: Option<NaiveDate>,
         page: i64,
         limit: i64,
@@ -302,18 +315,76 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(inserted_referral)
     }
 
+    // ==================== Seasons ====================
+
+    async fn get_active_season(&self) -> Result<Option<Season>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let season: Option<Season> = schema::points_seasons::table
+            .filter(schema::points_seasons::is_active.eq(true))
+            .first(&mut conn)
+            .await
+            .optional()?;
+
+        Ok(season)
+    }
+
+    async fn get_season_by_id(&self, id: i32) -> Result<Option<Season>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let season: Option<Season> = schema::points_seasons::table
+            .filter(schema::points_seasons::id.eq(id))
+            .first(&mut conn)
+            .await
+            .optional()?;
+
+        Ok(season)
+    }
+
+    async fn create_season(&self, season: NewSeason) -> Result<Season> {
+        let mut conn = self.db_pool.get().await?;
+
+        let created_season: Season = diesel::insert_into(schema::points_seasons::table)
+            .values(&season)
+            .get_result(&mut conn)
+            .await?;
+
+        Ok(created_season)
+    }
+
+    async fn activate_season(&self, season_id: i32) -> Result<()> {
+        let mut conn = self.db_pool.get().await?;
+
+        // First, deactivate all seasons
+        diesel::update(schema::points_seasons::table)
+            .set(schema::points_seasons::is_active.eq(false))
+            .execute(&mut conn)
+            .await?;
+
+        // Then activate the specified season
+        diesel::update(schema::points_seasons::table)
+            .filter(schema::points_seasons::id.eq(season_id))
+            .set(schema::points_seasons::is_active.eq(true))
+            .execute(&mut conn)
+            .await?;
+
+        Ok(())
+    }
+
     // ==================== Points Snapshots ====================
 
     async fn get_snapshot(
         &self,
         address: &str,
         snapshot_date: NaiveDate,
+        season_id: i32,
     ) -> Result<Option<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
             .filter(schema::points_snapshots::address.eq(address))
             .filter(schema::points_snapshots::snapshot_date.eq(snapshot_date))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
             .first(&mut conn)
             .await
             .optional()?;
@@ -324,6 +395,7 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn get_user_snapshots(
         &self,
         address: &str,
+        season_id: i32,
         page: i64,
         limit: i64,
     ) -> Result<Vec<PointsSnapshot>> {
@@ -331,6 +403,7 @@ impl PointsRepositoryTrait for PointsRepository {
 
         let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
             .filter(schema::points_snapshots::address.eq(address))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
             .order(schema::points_snapshots::snapshot_date.desc())
             .offset((page - 1) * limit)
             .limit(limit)
@@ -340,11 +413,12 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshots)
     }
 
-    async fn get_latest_snapshot(&self, address: &str) -> Result<Option<PointsSnapshot>> {
+    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
             .filter(schema::points_snapshots::address.eq(address))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
             .order(schema::points_snapshots::snapshot_date.desc())
             .first(&mut conn)
             .await
@@ -353,11 +427,12 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshot)
     }
 
-    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate) -> Result<Vec<PointsSnapshot>> {
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
             .filter(schema::points_snapshots::snapshot_date.eq(snapshot_date))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
             .load(&mut conn)
             .await?;
 
@@ -367,9 +442,10 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64> {
         let mut conn = self.db_pool.get().await?;
 
-        // Count users with higher points on the same date (rank = count + 1)
+        // Count users with higher points on the same date and season (rank = count + 1)
         let count: i64 = schema::points_snapshots::table
             .filter(schema::points_snapshots::snapshot_date.eq(snapshot.snapshot_date))
+            .filter(schema::points_snapshots::season_id.eq(snapshot.season_id))
             .filter(schema::points_snapshots::total_points.gt(&snapshot.total_points))
             .count()
             .get_result(&mut conn)
@@ -380,6 +456,7 @@ impl PointsRepositoryTrait for PointsRepository {
 
     async fn get_leaderboard(
         &self,
+        season_id: i32,
         snapshot_date: Option<NaiveDate>,
         page: i64,
         limit: i64,
@@ -390,9 +467,10 @@ impl PointsRepositoryTrait for PointsRepository {
         let date_to_query = match snapshot_date {
             Some(date) => date,
             None => {
-                // Get the latest snapshot date
+                // Get the latest snapshot date for this season
                 let latest_date: Option<NaiveDate> = schema::points_snapshots::table
                     .select(schema::points_snapshots::snapshot_date)
+                    .filter(schema::points_snapshots::season_id.eq(season_id))
                     .order(schema::points_snapshots::snapshot_date.desc())
                     .first(&mut conn)
                     .await
@@ -400,14 +478,15 @@ impl PointsRepositoryTrait for PointsRepository {
 
                 match latest_date {
                     Some(date) => date,
-                    None => return Ok(vec![]), // No snapshots exist
+                    None => return Ok(vec![]), // No snapshots exist for this season
                 }
             }
         };
 
-        // Query snapshots for the determined date, ordered by total_points
+        // Query snapshots for the determined date and season, ordered by total_points
         let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
             .filter(schema::points_snapshots::snapshot_date.eq(date_to_query))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
             .order(schema::points_snapshots::total_points.desc())
             .offset((page - 1) * limit)
             .limit(limit)
@@ -430,6 +509,7 @@ impl PointsRepositoryTrait for PointsRepository {
             .on_conflict((
                 schema::points_snapshots::address,
                 schema::points_snapshots::snapshot_date,
+                schema::points_snapshots::season_id,
             ))
             .do_update()
             .set((

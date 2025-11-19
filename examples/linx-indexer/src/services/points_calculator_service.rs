@@ -113,6 +113,12 @@ where
     pub async fn calculate_points_for_date(&self, date: NaiveDate) -> Result<()> {
         tracing::info!("Starting points calculation for date: {}", date);
 
+        // Fetch active season
+        let active_season = self.points_repository.get_active_season().await?
+            .context("No active season found. Cannot calculate points.")?;
+
+        tracing::info!("Using season {} for calculation", active_season.season_number);
+
         // Load point earning rules from database
         let points_config = self.load_points_config().await?;
 
@@ -141,8 +147,8 @@ where
         self.calculate_referral_points(&mut user_activities).await?;
 
         // 7. Store results
-        self.store_snapshots(date, &user_activities).await?;
-        self.store_transactions(date, &user_activities).await?;
+        self.store_snapshots(date, active_season.id, &user_activities).await?;
+        self.store_transactions(date, active_season.id, &user_activities).await?;
 
         tracing::info!("Completed points calculation for date: {}", date);
         Ok(())
@@ -520,6 +526,7 @@ where
     async fn store_snapshots(
         &self,
         date: NaiveDate,
+        season_id: i32,
         user_activities: &HashMap<String, UserDailyActivity>,
     ) -> Result<()> {
         use crate::models::NewPointsSnapshot;
@@ -534,7 +541,7 @@ where
             // Fetch the previous day's snapshot to get cumulative total
             let previous_total = match self
                 .points_repository
-                .get_snapshot(&activity.address, previous_date)
+                .get_snapshot(&activity.address, previous_date, season_id)
                 .await?
             {
                 Some(prev_snapshot) => prev_snapshot.total_points,
@@ -557,13 +564,14 @@ where
                 referral_points: BigDecimal::zero(), // TODO: Track referral points separately
                 total_points: cumulative_total,
                 total_volume_usd: activity.total_volume_usd.clone(),
+                season_id,
             });
         }
 
         // Step 2: Get all users who had snapshots on the previous day but no activity today
         let all_previous_snapshots = self
             .points_repository
-            .get_snapshots_by_date(previous_date)
+            .get_snapshots_by_date(previous_date, season_id)
             .await?;
 
         for prev_snapshot in all_previous_snapshots {
@@ -586,6 +594,7 @@ where
                 referral_points: BigDecimal::zero(),
                 total_points: prev_snapshot.total_points, // Carry forward cumulative total
                 total_volume_usd: BigDecimal::zero(), // No new volume today
+                season_id,
             });
         }
 
@@ -605,6 +614,7 @@ where
     async fn store_transactions(
         &self,
         date: NaiveDate,
+        season_id: i32,
         user_activities: &HashMap<String, UserDailyActivity>,
     ) -> Result<()> {
         use crate::models::NewPointsTransaction;
@@ -631,6 +641,7 @@ where
                     amount_usd: tx_detail.amount_usd.clone(),
                     points_earned: tx_detail.points_earned.clone(),
                     snapshot_date: date,
+                    season_id,
                 });
             }
         }
@@ -829,8 +840,26 @@ mod tests {
         }
 
         fn with_no_previous_snapshots(mut self) -> Self {
-            self.points_repo.expect_get_snapshot().returning(|_, _| Ok(None));
-            self.points_repo.expect_get_snapshots_by_date().returning(|_| Ok(vec![]));
+            self.points_repo.expect_get_snapshot().returning(|_, _, _| Ok(None));
+            self.points_repo.expect_get_snapshots_by_date().returning(|_, _| Ok(vec![]));
+            self
+        }
+
+        fn with_active_season(mut self, season_id: i32) -> Self {
+            use crate::models::Season;
+            use chrono::NaiveDate;
+
+            self.points_repo.expect_get_active_season().returning(move || {
+                Ok(Some(Season {
+                    id: season_id,
+                    season_number: 1,
+                    start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+                    end_date: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                    max_tokens_distribution: BigDecimal::from_str("1000000").unwrap(),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                }))
+            });
             self
         }
 
@@ -955,14 +984,15 @@ mod tests {
             .with_no_multipliers()
             .with_no_referrals()
             .with_no_previous_snapshots()
+            .with_active_season(1)
             .expect_snapshots(|snapshots| {
                 snapshots.len() == 2
                     && snapshots
                         .iter()
-                        .any(|s| s.address == "user1" && s.borrow_points == bd("3000"))
+                        .any(|s| s.address == "user1" && s.borrow_points == bd("3000") && s.season_id == 1)
                     && snapshots
                         .iter()
-                        .any(|s| s.address == "user2" && s.borrow_points == bd("2000"))
+                        .any(|s| s.address == "user2" && s.borrow_points == bd("2000") && s.season_id == 1)
             })
             .expect_transactions(|txs| txs.len() == 3)
             .build();
@@ -992,6 +1022,7 @@ mod tests {
             .with_no_multipliers()
             .with_no_referrals()
             .with_no_previous_snapshots()
+            .with_active_season(1)
             .expect_snapshots(|snapshots| snapshots.len() == 1)
             .expect_transactions(|txs| txs.len() == 1)
             .build();
@@ -1017,11 +1048,13 @@ mod tests {
             .with_no_multipliers()
             .with_no_referrals()
             .with_no_previous_snapshots()
+            .with_active_season(1)
             .expect_snapshots(|snapshots| {
                 if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
                     s.swap_points == bd("5000")
                         && s.borrow_points == bd("2000")
                         && s.base_points_total == bd("7000")
+                        && s.season_id == 1
                 } else {
                     false
                 }

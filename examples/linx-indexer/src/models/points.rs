@@ -59,6 +59,35 @@ pub struct NewPointsMultiplier {
     pub is_active: bool,
 }
 
+// ==================== Seasons ====================
+
+#[derive(Queryable, Insertable, Debug, Clone, Serialize, AsChangeset, ToSchema)]
+#[diesel(table_name = schema::points_seasons)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Season {
+    pub id: i32,
+    pub season_number: i32,
+    #[schema(value_type = String)]
+    pub start_date: NaiveDate,
+    #[schema(value_type = String)]
+    pub end_date: NaiveDate,
+    #[schema(value_type = String)]
+    pub max_tokens_distribution: BigDecimal,
+    pub is_active: bool,
+    #[schema(value_type = String)]
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::points_seasons)]
+pub struct NewSeason {
+    pub season_number: i32,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub max_tokens_distribution: BigDecimal,
+    pub is_active: bool,
+}
+
 // ==================== Referral Codes ====================
 
 #[derive(Queryable, Insertable, Debug, Clone, Serialize, AsChangeset, ToSchema)]
@@ -132,6 +161,7 @@ pub struct PointsSnapshot {
     pub total_volume_usd: BigDecimal,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
+    pub season_id: i32,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -149,6 +179,7 @@ pub struct NewPointsSnapshot {
     pub referral_points: BigDecimal,
     pub total_points: BigDecimal,
     pub total_volume_usd: BigDecimal,
+    pub season_id: i32,
 }
 
 // ==================== Points Transactions ====================
@@ -169,6 +200,7 @@ pub struct PointsTransaction {
     pub created_at: NaiveDateTime,
     #[schema(value_type = String)]
     pub snapshot_date: NaiveDate,
+    pub season_id: i32,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -180,4 +212,5 @@ pub struct NewPointsTransaction {
     pub amount_usd: BigDecimal,
     pub points_earned: BigDecimal,
     pub snapshot_date: NaiveDate,
+    pub season_id: i32,
 }
