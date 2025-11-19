@@ -28,13 +28,14 @@ impl PointsRouter {
 pub struct LeaderboardEntry {
     pub user: String,
     #[schema(value_type = String)]
-    pub total_points: BigDecimal,
+    pub points: BigDecimal,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserPointsResponse {
     #[schema(value_type = String)]
     pub points: BigDecimal,
+    pub rank: i64,
 }
 
 // ==================== Handler Functions ====================
@@ -63,10 +64,7 @@ pub async fn get_leaderboard_handler(
     // Map to simplified response format
     let leaderboard: Vec<LeaderboardEntry> = snapshots
         .into_iter()
-        .map(|snapshot| LeaderboardEntry {
-            user: snapshot.address,
-            total_points: snapshot.total_points,
-        })
+        .map(|snapshot| LeaderboardEntry { user: snapshot.address, points: snapshot.total_points })
         .collect();
 
     Ok(Json(leaderboard))
@@ -96,7 +94,11 @@ pub async fn get_user_points_handler(
     let snapshot = repo.get_latest_snapshot(&address).await?;
 
     match snapshot {
-        Some(snapshot) => Ok(Json(UserPointsResponse { points: snapshot.total_points })),
+        Some(snapshot) => {
+            let rank = repo.get_user_rank(&snapshot).await?;
+
+            Ok(Json(UserPointsResponse { points: snapshot.total_points, rank }))
+        }
         None => Err(AppError::NotFound(format!("No points found for address {}", address))),
     }
 }

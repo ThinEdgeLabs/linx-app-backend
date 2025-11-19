@@ -77,6 +77,8 @@ pub trait PointsRepositoryTrait {
 
     async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate) -> Result<Vec<PointsSnapshot>>;
 
+    async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64>;
+
     async fn get_leaderboard(
         &self,
         snapshot_date: Option<NaiveDate>,
@@ -360,6 +362,20 @@ impl PointsRepositoryTrait for PointsRepository {
             .await?;
 
         Ok(snapshots)
+    }
+
+    async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64> {
+        let mut conn = self.db_pool.get().await?;
+
+        // Count users with higher points on the same date (rank = count + 1)
+        let count: i64 = schema::points_snapshots::table
+            .filter(schema::points_snapshots::snapshot_date.eq(snapshot.snapshot_date))
+            .filter(schema::points_snapshots::total_points.gt(&snapshot.total_points))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+
+        Ok(count + 1)
     }
 
     async fn get_leaderboard(
