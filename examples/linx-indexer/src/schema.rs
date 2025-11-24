@@ -271,7 +271,6 @@ diesel::table! {
     user_referrals (id) {
         id -> Int4,
         user_address -> Text,
-        referral_code -> Text,
         referred_by_address -> Text,
         created_at -> Timestamp,
     }

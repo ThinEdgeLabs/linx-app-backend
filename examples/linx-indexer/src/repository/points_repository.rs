@@ -8,6 +8,7 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::RunQueryDsl;
 #[cfg(test)]
 use mockall::automock;
+use rand::distr::{Alphanumeric, SampleString};
 
 use crate::{
     models::{
@@ -48,13 +49,13 @@ pub trait PointsRepositoryTrait {
 
     async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode>;
 
+    async fn get_or_create_referral_code(&self, owner_address: &str) -> Result<String>;
+
     // ==================== User Referrals ====================
 
     async fn get_all_user_referrals(&self) -> Result<Vec<UserReferral>>;
 
     async fn get_user_referral(&self, user_address: &str) -> Result<Option<UserReferral>>;
-
-    async fn get_referrals_for_code(&self, referral_code: &str) -> Result<Vec<UserReferral>>;
 
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral>;
 
@@ -85,9 +86,17 @@ pub trait PointsRepositoryTrait {
         limit: i64,
     ) -> Result<Vec<PointsSnapshot>>;
 
-    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>>;
+    async fn get_latest_snapshot(
+        &self,
+        address: &str,
+        season_id: i32,
+    ) -> Result<Option<PointsSnapshot>>;
 
-    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>>;
+    async fn get_snapshots_by_date(
+        &self,
+        snapshot_date: NaiveDate,
+        season_id: i32,
+    ) -> Result<Vec<PointsSnapshot>>;
 
     async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64>;
 
@@ -271,6 +280,71 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(inserted_code)
     }
 
+    async fn get_or_create_referral_code(&self, owner_address: &str) -> Result<String> {
+        // Check if user already has a referral code
+        if let Some(existing_code) = self.get_referral_code_by_owner(owner_address).await? {
+            return Ok(existing_code.code);
+        }
+
+        // Try readable codes first (up to 5 attempts)
+        for attempt in 0..5 {
+            let code = generate_readable_code(owner_address, attempt);
+
+            let new_code =
+                NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
+
+            match self.insert_referral_code(new_code).await {
+                Ok(created_code) => {
+                    if attempt > 0 {
+                        tracing::info!(
+                            "Generated readable referral code after {} attempts",
+                            attempt + 1
+                        );
+                    }
+                    return Ok(created_code.code);
+                }
+                Err(e) => {
+                    let error_msg = e.to_string().to_lowercase();
+                    if error_msg.contains("unique constraint")
+                        || error_msg.contains("duplicate key")
+                    {
+                        tracing::debug!(
+                            "Readable code collision on attempt {}, retrying...",
+                            attempt + 1
+                        );
+                        continue;
+                    }
+                    return Err(e); // Other error type
+                }
+            }
+        }
+
+        tracing::warn!("Could not generate readable code after 5 attempts, using random fallback");
+        loop {
+            // Generate random 8-character alphanumeric code
+            let code = Alphanumeric.sample_string(&mut rand::rng(), 8).to_uppercase();
+
+            let new_code =
+                NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
+
+            match self.insert_referral_code(new_code).await {
+                Ok(created_code) => {
+                    tracing::info!("Generated random referral code as fallback");
+                    return Ok(created_code.code);
+                }
+                Err(e) => {
+                    let error_msg = e.to_string().to_lowercase();
+                    if error_msg.contains("unique constraint")
+                        || error_msg.contains("duplicate key")
+                    {
+                        continue;
+                    }
+                    return Err(e); // Other error type
+                }
+            }
+        }
+    }
+
     // ==================== User Referrals ====================
 
     async fn get_all_user_referrals(&self) -> Result<Vec<UserReferral>> {
@@ -291,17 +365,6 @@ impl PointsRepositoryTrait for PointsRepository {
             .optional()?;
 
         Ok(referral)
-    }
-
-    async fn get_referrals_for_code(&self, referral_code: &str) -> Result<Vec<UserReferral>> {
-        let mut conn = self.db_pool.get().await?;
-
-        let referrals: Vec<UserReferral> = schema::user_referrals::table
-            .filter(schema::user_referrals::referral_code.eq(referral_code))
-            .load(&mut conn)
-            .await?;
-
-        Ok(referrals)
     }
 
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral> {
@@ -413,7 +476,11 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshots)
     }
 
-    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>> {
+    async fn get_latest_snapshot(
+        &self,
+        address: &str,
+        season_id: i32,
+    ) -> Result<Option<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
@@ -427,7 +494,11 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshot)
     }
 
-    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>> {
+    async fn get_snapshots_by_date(
+        &self,
+        snapshot_date: NaiveDate,
+        season_id: i32,
+    ) -> Result<Vec<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
@@ -667,4 +738,148 @@ impl PointsRepositoryTrait for PointsRepository {
 
         Ok(deleted_count as u64)
     }
+}
+
+// ==================== Helper Functions ====================
+
+/// Generate a readable referral code from an address with collision resistance
+fn generate_readable_code(address: &str, attempt: u32) -> String {
+    use sha2::{Digest, Sha256};
+
+    // Hash the address combined with attempt number for uniqueness
+    let mut hasher = Sha256::new();
+    hasher.update(address.as_bytes());
+    hasher.update(attempt.to_le_bytes());
+    let hash = hasher.finalize();
+
+    // Word lists for readable codes
+    const ADJECTIVES: &[&str] = &[
+        "swift", "bright", "calm", "bold", "wise", "cool", "warm", "dark", "light", "quick",
+        "slow", "soft", "hard", "fair", "wild", "tame", "grand", "small", "tall", "short", "long",
+        "wide", "thin", "thick", "young", "old", "new", "pure", "clear", "deep", "flat", "steep",
+        "sharp", "blunt", "rough", "smooth", "clean", "dirty", "fresh", "stale", "sweet", "sour",
+        "spicy", "mild", "hot", "cold", "wet", "dry", "loud", "quiet", "high", "low", "fast",
+        "slow", "strong", "weak", "rich", "poor", "full", "empty", "heavy", "light", "tight",
+        "loose", "dense", "thin", "solid", "fluid", "stable", "shaky", "firm", "soft", "rigid",
+        "flexible", "hard", "gentle", "harsh", "kind", "mean", "nice", "good", "bad", "great",
+        "small", "huge", "tiny", "giant", "mini", "super", "ultra", "mega", "micro", "prime",
+        "royal", "noble", "humble", "proud", "modest", "brave", "timid", "fierce", "meek", "bold",
+        "shy",
+    ];
+
+    const NOUNS: &[&str] = &[
+        "tiger",
+        "moon",
+        "wave",
+        "peak",
+        "star",
+        "wind",
+        "fire",
+        "rain",
+        "stone",
+        "leaf",
+        "cloud",
+        "river",
+        "ocean",
+        "mountain",
+        "forest",
+        "desert",
+        "eagle",
+        "wolf",
+        "bear",
+        "lion",
+        "hawk",
+        "fox",
+        "deer",
+        "horse",
+        "dragon",
+        "phoenix",
+        "griffin",
+        "falcon",
+        "raven",
+        "sparrow",
+        "owl",
+        "swan",
+        "thunder",
+        "lightning",
+        "storm",
+        "breeze",
+        "gust",
+        "gale",
+        "mist",
+        "fog",
+        "sun",
+        "comet",
+        "planet",
+        "galaxy",
+        "cosmos",
+        "void",
+        "abyss",
+        "horizon",
+        "crystal",
+        "diamond",
+        "pearl",
+        "ruby",
+        "sapphire",
+        "emerald",
+        "jade",
+        "opal",
+        "shadow",
+        "spirit",
+        "ghost",
+        "soul",
+        "heart",
+        "mind",
+        "dream",
+        "vision",
+        "sword",
+        "shield",
+        "arrow",
+        "spear",
+        "blade",
+        "hammer",
+        "axe",
+        "bow",
+        "crown",
+        "throne",
+        "castle",
+        "tower",
+        "gate",
+        "bridge",
+        "path",
+        "road",
+        "flame",
+        "ember",
+        "spark",
+        "blaze",
+        "inferno",
+        "torch",
+        "beacon",
+        "light",
+        "frost",
+        "ice",
+        "snow",
+        "winter",
+        "spring",
+        "summer",
+        "autumn",
+        "season",
+        "dawn",
+        "dusk",
+        "twilight",
+        "midnight",
+        "noon",
+        "morning",
+        "evening",
+        "night",
+    ];
+
+    // Use hash bytes to deterministically select words
+    let adj_index = (hash[0] as usize) % ADJECTIVES.len();
+    let noun_index = (hash[1] as usize) % NOUNS.len();
+
+    // Use 2 bytes for number to get range 100-999
+    let num = ((hash[2] as u16) << 8 | hash[3] as u16) % 900 + 100;
+
+    format!("{}-{}-{}", ADJECTIVES[adj_index], NOUNS[noun_index], num).to_uppercase()
 }

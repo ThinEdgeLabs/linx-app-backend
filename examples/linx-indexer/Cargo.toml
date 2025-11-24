@@ -40,7 +40,8 @@ utoipa-axum.workspace = true
 utoipa.workspace = true
 utoipa-swagger-ui.workspace = true
 bs58 = "0.5.1"
-rand.workspace = true
+rand = { workspace = true, features = ["std_rng"] }
+sha2 = "0.10"
 reqwest.workspace = true
 
 [dev-dependencies]

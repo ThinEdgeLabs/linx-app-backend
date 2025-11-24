@@ -1,0 +1,2 @@
+-- This migration is not reversible
+-- The referral_code column was redundant and has been removed

@@ -116,7 +116,6 @@ pub struct NewReferralCode {
 pub struct UserReferral {
     pub id: i32,
     pub user_address: String,
-    pub referral_code: String,
     pub referred_by_address: String,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
@@ -126,7 +125,6 @@ pub struct UserReferral {
 #[diesel(table_name = schema::user_referrals)]
 pub struct NewUserReferral {
     pub user_address: String,
-    pub referral_code: String,
     pub referred_by_address: String,
 }
 
