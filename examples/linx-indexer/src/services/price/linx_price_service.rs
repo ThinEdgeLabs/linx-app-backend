@@ -246,7 +246,7 @@ mod tests {
 
         assert!(result.is_ok());
         let prices = result.unwrap();
-        assert!(prices.len() > 0);
+        assert!(!prices.is_empty());
     }
 
     #[tokio::test]

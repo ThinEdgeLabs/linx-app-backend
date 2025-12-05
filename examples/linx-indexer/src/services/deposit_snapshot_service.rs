@@ -29,7 +29,7 @@ impl DepositSnapshotService {
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
         let config_path = "config.toml";
-        let config = load_config(&config_path).expect("Failed to load config");
+        let config = load_config(config_path).expect("Failed to load config");
         let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
         let lending_processor_config =
             processor_config.is_some().then_some(serde_json::to_value(processor_config)?);
@@ -222,14 +222,14 @@ impl DepositSnapshotService {
                 let last_update = timestamp_millis_to_naive_datetime(timestamp);
                 let fee = self.extract_bigdecimal_from_object(&returns[5]).unwrap_or_default();
 
-                return Ok(MarketState {
+                Ok(MarketState {
                     total_supply_assets,
                     total_supply_shares,
                     total_borrow_assets,
                     total_borrow_shares,
                     last_update,
                     fee,
-                });
+                })
             }
         }
     }

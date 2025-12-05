@@ -161,10 +161,7 @@ impl Worker {
     /// Syncs the blocks in the range [start_ts, stop_ts].
     /// This method will fetch blocks in batches and process them using the configured processors.
     async fn sync_range(&self, start_ts: u64, stop_ts: u64) -> Result<()> {
-        let range = BlockRange {
-            from_ts: start_ts.try_into().unwrap(),
-            to_ts: stop_ts.try_into().unwrap(),
-        };
+        let range = BlockRange { from_ts: start_ts, to_ts: stop_ts };
 
         tracing::info!("Syncing blocks in range: {:?}", range);
 

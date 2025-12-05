@@ -501,7 +501,7 @@ where
         for referral in all_referrals {
             referrals_by_referrer
                 .entry(referral.referred_by_address.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(referral.user_address);
         }
 
@@ -649,7 +649,7 @@ where
                     action_type: tx_detail.action_type.clone(),
                     transaction_id: tx_detail.transaction_id.clone(),
                     amount_usd: tx_detail.amount_usd.clone(),
-                    points_earned: tx_detail.points_earned.clone(),
+                    points_earned: tx_detail.points_earned,
                     snapshot_date: date,
                     season_id,
                 });
@@ -666,7 +666,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AccountTransaction, DepositSnapshot, LendingEvent, SwapTransactionDto};
+    use crate::models::{AccountTransaction, LendingEvent, SwapTransactionDto};
     use crate::repository::{
         MockAccountTransactionRepositoryTrait, MockLendingRepositoryTrait,
         MockPointsRepositoryTrait,

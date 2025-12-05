@@ -52,13 +52,10 @@ impl ProcessorTrait for BlockProcessor {
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        match output {
-            ProcessorOutput::Block(blocks) => {
-                if !blocks.is_empty() {
-                    insert_blocks_to_db(self.connection_pool.clone(), blocks).await?;
-                }
+        if let ProcessorOutput::Block(blocks) = output {
+            if !blocks.is_empty() {
+                insert_blocks_to_db(self.connection_pool.clone(), blocks).await?;
             }
-            _ => {}
         }
         Ok(())
     }

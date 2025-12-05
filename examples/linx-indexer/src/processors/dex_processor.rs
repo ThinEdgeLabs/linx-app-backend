@@ -266,13 +266,13 @@ impl DexProcessor {
         })
     }
 
-    fn extract_string_field(&self, fields: &Vec<EventField>, index: usize) -> Option<String> {
+    fn extract_string_field(&self, fields: &[EventField], index: usize) -> Option<String> {
         fields.get(index)?.value.as_str().map(|s| s.to_string())
     }
 
     fn extract_bigdecimal_field(
         &self,
-        fields: &Vec<EventField>,
+        fields: &[EventField],
         index: usize,
     ) -> Option<bigdecimal::BigDecimal> {
         fields.get(index)?.value.as_str().and_then(|s| s.parse().ok())
@@ -323,7 +323,7 @@ impl ProcessorTrait for DexProcessor {
                 .extend(block_pools.iter().map(|p| (p.address.clone(), Pool::from(p.clone()))));
             new_pools.extend(block_pools);
 
-            let block_swaps = self.extract_swaps(&block_events, &existing_pools);
+            let block_swaps = self.extract_swaps(block_events, &existing_pools);
             swaps.extend(block_swaps);
         }
 

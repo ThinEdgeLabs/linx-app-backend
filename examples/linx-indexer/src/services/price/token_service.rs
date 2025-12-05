@@ -37,7 +37,7 @@ pub struct TokenService {
 impl TokenService {
     pub fn new(network: Network) -> Self {
         let config_path = "config.toml";
-        let config = load_config(&config_path).expect("Failed to load config");
+        let config = load_config(config_path).expect("Failed to load config");
 
         let linx_api_url = config
             .price_service

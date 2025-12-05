@@ -140,7 +140,7 @@ fn extract_token_transfers(
 
     // Early exit if inputs come from more than one address and none are known gas payers
     if input_addresses.len() > 1 {
-        let gas_payer_present = input_addresses.intersection(&gas_payer_addresses).next().is_some();
+        let gas_payer_present = input_addresses.intersection(gas_payer_addresses).next().is_some();
 
         if !gas_payer_present {
             return vec![]; // Skip ambiguous multi-input txs

@@ -77,8 +77,7 @@ impl ProcessorTrait for ContractCallProcessor {
                     .transactions
                     .iter()
                     .filter(|tx| self.classifier.classify(tx) == TransactionCategory::ContractCall)
-                    .map(|tx| extract_contract_call(tx, &el.block))
-                    .flatten()
+                    .filter_map(|tx| extract_contract_call(tx, &el.block))
             })
             .collect();
 

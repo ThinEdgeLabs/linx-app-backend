@@ -60,13 +60,10 @@ impl ProcessorTrait for EventProcessor {
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        match output {
-            ProcessorOutput::Event(events) => {
-                if !events.is_empty() {
-                    insert_events_to_db(self.connection_pool.clone(), events).await?;
-                }
+        if let ProcessorOutput::Event(events) = output {
+            if !events.is_empty() {
+                insert_events_to_db(self.connection_pool.clone(), events).await?;
             }
-            _ => {}
         }
         Ok(())
     }

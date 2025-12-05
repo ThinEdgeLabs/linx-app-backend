@@ -166,7 +166,7 @@ impl LendingRepository {
             }
             (None, Some(address)) => self.calculate_user_positions(address).await,
             (Some(market_id), None) => {
-                self.calculate_positions_for_market(&market_id, page, limit).await
+                self.calculate_positions_for_market(market_id, page, limit).await
             }
             (None, None) => Err(anyhow::anyhow!("Either market_id or address must be provided")),
         }

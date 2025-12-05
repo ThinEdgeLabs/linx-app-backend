@@ -13,7 +13,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config_path = "config.toml";
-    let config = load_config(&config_path).expect("Failed to load config");
+    let config = load_config(config_path).expect("Failed to load config");
 
     let db_pool = new_db_pool(&config.worker.database_url, None).await?;
 

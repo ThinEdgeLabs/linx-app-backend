@@ -51,13 +51,10 @@ impl ProcessorTrait for TxProcessor {
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        match output {
-            ProcessorOutput::Tx(models) => {
-                if !models.is_empty() {
-                    insert_txs_to_db(self.connection_pool.clone(), models).await?;
-                }
+        if let ProcessorOutput::Tx(models) = output {
+            if !models.is_empty() {
+                insert_txs_to_db(self.connection_pool.clone(), models).await?;
             }
-            _ => {}
         }
         Ok(())
     }

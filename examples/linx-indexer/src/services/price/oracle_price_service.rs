@@ -54,7 +54,7 @@ pub struct OraclePriceService {
 impl OraclePriceService {
     pub fn new(network: Network) -> Self {
         let config_path = "config.toml";
-        let config = load_config(&config_path).expect("Failed to load config");
+        let config = load_config(config_path).expect("Failed to load config");
         let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
         let lending_processor_config =
             processor_config.is_some().then_some(serde_json::to_value(processor_config).unwrap());

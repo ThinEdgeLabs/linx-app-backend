@@ -137,7 +137,7 @@ impl LendingProcessor {
                 oracle: self.extract_string_field(&event.fields, 4)?,
                 irm: self.extract_string_field(&event.fields, 5)?,
                 ltv: self.extract_bigdecimal_field(&event.fields, 6)?,
-                created_at: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+                created_at: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                     .unwrap_or_default()
                     .naive_utc(),
             })
@@ -203,7 +203,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -229,7 +229,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -255,7 +255,7 @@ impl LendingProcessor {
             shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -281,7 +281,7 @@ impl LendingProcessor {
             shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -307,7 +307,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -333,7 +333,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -359,7 +359,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?, // repaidShares
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp as i64 / 1000, 0)
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
                 .unwrap_or_default()
                 .naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
@@ -367,13 +367,13 @@ impl LendingProcessor {
         })
     }
 
-    fn extract_string_field(&self, fields: &Vec<EventField>, index: usize) -> Option<String> {
+    fn extract_string_field(&self, fields: &[EventField], index: usize) -> Option<String> {
         fields.get(index)?.value.as_str().map(|s| s.to_string())
     }
 
     fn extract_bigdecimal_field(
         &self,
-        fields: &Vec<EventField>,
+        fields: &[EventField],
         index: usize,
     ) -> Option<bigdecimal::BigDecimal> {
         fields.get(index)?.value.as_str().and_then(|s| s.parse().ok())

@@ -151,7 +151,7 @@ pub async fn get_max_block_timestamp(db: &Arc<DbPool>) -> Result<Option<i64>> {
     let max_timestamp: Option<NaiveDateTime> =
         blocks.select(diesel::dsl::max(timestamp)).first(&mut conn).await?;
     let milliseconds =
-        max_timestamp.map_or(None, |ts: NaiveDateTime| Some(ts.and_utc().timestamp_millis()));
+        max_timestamp.map(|ts: NaiveDateTime| ts.and_utc().timestamp_millis());
     Ok(milliseconds)
 }
 
