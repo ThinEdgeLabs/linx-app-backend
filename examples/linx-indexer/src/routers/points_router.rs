@@ -42,7 +42,10 @@ pub struct UserPointsResponse {
 #[derive(Debug, serde::Deserialize, ToSchema)]
 pub struct ApplyReferralRequest {
     pub user_address: String,
+    pub public_key: String,
     pub referral_code: String,
+    pub signature: String,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -163,6 +166,9 @@ pub async fn get_current_season_handler(
 /// Apply a referral code
 ///
 /// Links a user to a referrer by applying their referral code. Can only be done once per user.
+/// Requires a signed message to prove ownership of the address.
+///
+/// Message format to sign: "Apply referral: {referral_code} at {timestamp}"
 #[utoipa::path(
     post,
     path = "/points/apply-referral",
@@ -171,6 +177,7 @@ pub async fn get_current_season_handler(
     responses(
         (status = 200, description = "Referral code processing result", body = ApplyReferralResponse),
         (status = 400, description = "Invalid referral code"),
+        (status = 403, description = "Invalid signature"),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -178,6 +185,40 @@ pub async fn apply_referral_handler(
     State(state): State<AppState>,
     Json(request): Json<ApplyReferralRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Verify timestamp is recent (within 5 minutes)
+    const MAX_TIME_DIFF_MS: i64 = 5 * 60 * 1000;
+    let current_timestamp =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
+            as i64;
+
+    let timestamp_diff = (current_timestamp - request.timestamp).abs();
+    if timestamp_diff > MAX_TIME_DIFF_MS {
+        return Err(AppError::Forbidden("Invalid signature".to_string()));
+    }
+
+    // Verify that the public key matches the address
+    let pubkey_matches = crate::crypto::verify_public_key_for_address(
+        &request.public_key,
+        &request.user_address,
+    )
+    .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
+
+    if !pubkey_matches {
+        return Err(AppError::Forbidden("Invalid signature".to_string()));
+    }
+
+    // Construct the message that should have been signed
+    let message = format!("Apply referral: {} at {}", request.referral_code, request.timestamp);
+
+    // Verify the signature
+    let is_valid =
+        crate::crypto::verify_signature(&request.public_key, &message, &request.signature)
+            .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
+
+    if !is_valid {
+        return Err(AppError::Forbidden("Invalid signature".to_string()));
+    }
+
     let repo = PointsRepository::new(state.db.clone());
 
     // Check if user already has a referral

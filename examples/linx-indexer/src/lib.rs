@@ -2,6 +2,7 @@ use bigdecimal::BigDecimal;
 use rand::RngCore;
 
 pub mod constants;
+pub mod crypto;
 pub mod models;
 pub mod processors;
 pub mod repository;
