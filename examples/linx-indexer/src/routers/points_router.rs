@@ -37,6 +37,7 @@ pub struct UserPointsResponse {
     pub points: i32,
     pub rank: i64,
     pub referral_code: String,
+    pub referrals: i64,
 }
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
@@ -131,7 +132,15 @@ pub async fn get_user_points_handler(
             // Get or create referral code for this user
             let referral_code = repo.get_or_create_referral_code(&address).await?;
 
-            Ok(Json(UserPointsResponse { points: snapshot.total_points, rank, referral_code }))
+            // Get count of users who used this user's referral code
+            let referrals = repo.count_referrals_by_address(&address).await?;
+
+            Ok(Json(UserPointsResponse {
+                points: snapshot.total_points,
+                rank,
+                referral_code,
+                referrals,
+            }))
         }
         None => Err(AppError::NotFound(format!("No points found for address {}", address))),
     }
@@ -197,11 +206,9 @@ pub async fn apply_referral_handler(
     }
 
     // Verify that the public key matches the address
-    let pubkey_matches = crate::crypto::verify_public_key_for_address(
-        &request.public_key,
-        &request.user_address,
-    )
-    .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
+    let pubkey_matches =
+        crate::crypto::verify_public_key_for_address(&request.public_key, &request.user_address)
+            .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
 
     if !pubkey_matches {
         return Err(AppError::Forbidden("Invalid signature".to_string()));

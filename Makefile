@@ -31,7 +31,7 @@ cli:
 	docker compose -f docker-compose.prod.yml exec cli bash
 
 # Connect to PostgreSQL database
-db:
+sql-cli:
 	@echo "Connecting to database..."
 	@docker compose -f docker-compose.prod.yml exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 

@@ -59,6 +59,8 @@ pub trait PointsRepositoryTrait {
 
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral>;
 
+    async fn count_referrals_by_address(&self, referred_by_address: &str) -> Result<i64>;
+
     // ==================== Seasons ====================
 
     async fn get_active_season(&self) -> Result<Option<Season>>;
@@ -376,6 +378,20 @@ impl PointsRepositoryTrait for PointsRepository {
             .await?;
 
         Ok(inserted_referral)
+    }
+
+    async fn count_referrals_by_address(&self, referred_by_address: &str) -> Result<i64> {
+        use crate::schema::user_referrals::dsl;
+
+        let mut conn = self.db_pool.get().await?;
+
+        let count: i64 = dsl::user_referrals
+            .filter(dsl::referred_by_address.eq(referred_by_address))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+
+        Ok(count)
     }
 
     // ==================== Seasons ====================
