@@ -180,6 +180,8 @@ impl LendingProcessor {
             self.parse_withdraw_collateral_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 12 {
             self.parse_liquidate_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 13 {
+            self.parse_accrue_interest_event(block, event, markets_map)
         } else {
             None
         }
@@ -357,6 +359,35 @@ impl LendingProcessor {
             on_behalf: self.extract_string_field(&event.fields, 2)?,
             amount: self.extract_bigdecimal_field(&event.fields, 5)?,
             shares: self.extract_bigdecimal_field(&event.fields, 4)?, // repaidShares
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
+                .unwrap_or_default()
+                .naive_utc(),
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
+    }
+
+    fn parse_accrue_interest_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+        markets_map: &HashMap<String, Market>,
+    ) -> Option<NewLendingEvent> {
+        // event AccrueInterest(marketId: ByteVec, prevBorrowRate: U256, interest: U256, feeShares: U256)
+
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let market = markets_map.get(&market_id).cloned();
+        let token_id = market.map(|m| m.loan_token.clone()).unwrap_or_default();
+
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "AccrueInterest".to_string(),
+            token_id,
+            on_behalf: String::new(), // Market-level event, no specific user
+            amount: self.extract_bigdecimal_field(&event.fields, 2)?, // interest
+            shares: self.extract_bigdecimal_field(&event.fields, 3)?, // feeShares
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
             block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
