@@ -19,10 +19,10 @@ pub struct LendingRouter;
 impl LendingRouter {
     pub fn register() -> OpenApiRouter<AppState> {
         OpenApiRouter::new()
-            .route("/lending/markets", get(get_markets))
-            .route("/lending/borrow-activity", get(get_borrow_activity))
-            .route("/lending/earn-activity", get(get_earn_activity))
-            .route("/lending/positions", get(get_positions))
+            .route("/lending/v1/markets", get(get_markets))
+            .route("/lending/v1/borrow-activity", get(get_borrow_activity))
+            .route("/lending/v1/earn-activity", get(get_earn_activity))
+            .route("/lending/v1/positions", get(get_positions))
     }
 }
 

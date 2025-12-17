@@ -137,7 +137,7 @@ pub fn configure_api(custom_router: Option<OpenApiRouter<AppState>>) -> OpenApiR
         .route("/v1/health", get(health_check));
 
     if let Some(custom_router) = custom_router {
-        router.nest("/v1", custom_router)
+        router.merge(custom_router)
     } else {
         router
     }

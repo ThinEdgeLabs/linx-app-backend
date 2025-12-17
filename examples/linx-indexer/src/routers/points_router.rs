@@ -17,10 +17,10 @@ pub struct PointsRouter;
 impl PointsRouter {
     pub fn register() -> OpenApiRouter<AppState> {
         OpenApiRouter::new()
-            .route("/points/leaderboard", get(get_leaderboard_handler))
-            .route("/points/season", get(get_current_season_handler))
-            .route("/points/apply-referral", post(apply_referral_handler))
-            .route("/points/{address}", get(get_user_points_handler))
+            .route("/points/v1/leaderboard", get(get_leaderboard_handler))
+            .route("/points/v1/season", get(get_current_season_handler))
+            .route("/points/v1/apply-referral", post(apply_referral_handler))
+            .route("/points/v1/{address}", get(get_user_points_handler))
     }
 }
 

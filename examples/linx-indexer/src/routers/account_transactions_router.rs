@@ -34,7 +34,7 @@ fn default_limit() -> i64 {
 
 #[utoipa::path(
     get,
-    path = "/account-transactions",
+    path = "/history/v1/account-transactions",
     tag = "Account Transactions",
     params(AccountTransactionsQuery),
     responses(
