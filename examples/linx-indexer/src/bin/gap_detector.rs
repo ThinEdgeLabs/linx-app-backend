@@ -18,10 +18,19 @@ async fn main() -> anyhow::Result<()> {
 
     let gap_service = GapDetectionService::new(db_pool.clone());
 
+    // Parse optional --min-height parameter
+    let min_height: Option<i64> = std::env::args()
+        .find(|arg| arg.starts_with("--min-height="))
+        .and_then(|arg| arg.strip_prefix("--min-height=").and_then(|val| val.parse().ok()));
+
+    if let Some(h) = min_height {
+        println!("Using minimum height filter: {}", h);
+    }
+
     match std::env::args().nth(1).as_deref() {
         Some("detect") => {
             tracing::info!("Running gap detection");
-            let report = gap_service.generate_report().await?;
+            let report = gap_service.generate_report(min_height).await?;
 
             println!("\n=== Gap Detection Report ===");
             println!("Total missing blocks: {}", report.total_missing_blocks);
@@ -96,27 +105,32 @@ async fn main() -> anyhow::Result<()> {
             .await?;
 
             // Run backfill
-            gap_service.backfill_gaps(&worker).await?;
+            gap_service.backfill_gaps(&worker, min_height).await?;
 
             println!("\n=== Backfill Complete ===");
             println!("All gaps have been backfilled successfully");
         }
         _ => {
-            println!("Usage: gap_detector [detect|backfill] [config-path]");
+            println!("Usage: gap_detector [detect|backfill] [config-path] [--min-height=N]");
             println!();
             println!("Commands:");
             println!("  detect      - Detect and report missing block heights");
             println!("  backfill    - Backfill all detected gaps through ALL processors");
             println!();
             println!("Arguments:");
-            println!(
-                "  config-path - Path to config file (default: examples/linx-indexer/config.toml)"
-            );
+            println!("  config-path     - Path to config file (default: config.toml)");
+            println!("  --min-height=N  - Only detect/backfill gaps at or above this height");
             println!();
             println!("Examples:");
             println!("  cargo run -p linx-indexer --bin gap_detector -- detect");
             println!("  cargo run -p linx-indexer --bin gap_detector -- backfill");
             println!("  cargo run -p linx-indexer --bin gap_detector -- detect config.toml");
+            println!(
+                "  cargo run -p linx-indexer --bin gap_detector -- detect --min-height=1000000"
+            );
+            println!(
+                "  cargo run -p linx-indexer --bin gap_detector -- backfill --min-height=1000000"
+            );
         }
     }
 

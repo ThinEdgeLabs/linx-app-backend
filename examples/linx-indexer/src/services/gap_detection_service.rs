@@ -43,8 +43,13 @@ impl GapDetectionService {
     }
 
     /// Detect missing block heights per chain
-    pub async fn detect_block_gaps(&self) -> Result<Vec<BlockGap>> {
-        tracing::info!("Starting block gap detection");
+    ///
+    /// # Arguments
+    /// * `min_height` - Optional minimum height to start gap detection from (useful for dapps deployed after genesis)
+    pub async fn detect_block_gaps(&self, min_height: Option<i64>) -> Result<Vec<BlockGap>> {
+        let min_height_filter = min_height.unwrap_or(0);
+
+        tracing::info!("Starting block gap detection (min_height: {})", min_height_filter);
 
         let sql = r#"
             WITH gaps AS (
@@ -54,6 +59,7 @@ impl GapDetectionService {
                     height,
                     LAG(height) OVER (PARTITION BY chain_from, chain_to ORDER BY height) as prev_height
                 FROM blocks
+                WHERE height >= $1
                 ORDER BY chain_from, chain_to, height
             ),
             gap_starts AS (
@@ -77,12 +83,16 @@ impl GapDetectionService {
                 chain_to,
                 missing_height
             FROM expanded_gaps
+            WHERE missing_height >= $1
             ORDER BY chain_from, chain_to, missing_height
         "#;
 
         let mut conn = self.db_pool.get().await?;
-        println!("Running gap detection SQL query...");
-        let missing_heights: Vec<MissingHeight> = diesel::sql_query(sql).load(&mut conn).await?;
+        println!("Running gap detection SQL query (min_height: {})...", min_height_filter);
+        let missing_heights: Vec<MissingHeight> = diesel::sql_query(sql)
+            .bind::<BigInt, _>(min_height_filter)
+            .load(&mut conn)
+            .await?;
         println!("Gap detection query completed. Processing results...");
 
         // Group by chain
@@ -110,20 +120,27 @@ impl GapDetectionService {
     }
 
     /// Generate a comprehensive gap detection report
-    pub async fn generate_report(&self) -> Result<GapDetectionReport> {
+    ///
+    /// # Arguments
+    /// * `min_height` - Optional minimum height to start gap detection from
+    pub async fn generate_report(&self, min_height: Option<i64>) -> Result<GapDetectionReport> {
         tracing::info!("Generating gap detection report");
 
-        let block_gaps = self.detect_block_gaps().await?;
+        let block_gaps = self.detect_block_gaps(min_height).await?;
         let total_missing_blocks: usize = block_gaps.iter().map(|g| g.total_missing).sum();
         println!("Total missing blocks detected: {}", total_missing_blocks);
         Ok(GapDetectionReport { block_gaps, total_missing_blocks })
     }
 
     /// Backfill all detected gaps
-    pub async fn backfill_gaps(&self, worker: &Worker) -> Result<()> {
+    ///
+    /// # Arguments
+    /// * `worker` - Worker instance to use for backfilling
+    /// * `min_height` - Optional minimum height to start gap detection from
+    pub async fn backfill_gaps(&self, worker: &Worker, min_height: Option<i64>) -> Result<()> {
         tracing::info!("Starting backfill of all detected gaps");
 
-        let gaps = self.detect_block_gaps().await?;
+        let gaps = self.detect_block_gaps(min_height).await?;
 
         // Collect all unique heights that need to be backfilled
         let mut all_heights: Vec<u64> =
