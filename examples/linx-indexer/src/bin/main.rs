@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use linx_indexer::{
-    processors::{contract_call_processor, dex_processor, lending_processor, transfer_processor},
+    get_processor_factories,
     routers::{AccountTransactionsRouter, LendingRouter, PointsRouter},
 };
 
@@ -9,13 +7,8 @@ use linx_indexer::{
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    // Adding processor factories
-    let mut processor_factories = HashMap::new();
-    processor_factories.insert("transfers".to_string(), transfer_processor::processor_factory());
-    processor_factories
-        .insert("contract_calls".to_string(), contract_call_processor::processor_factory());
-    processor_factories.insert("dex".to_string(), dex_processor::processor_factory());
-    processor_factories.insert("lending".to_string(), lending_processor::processor_factory());
+    // Get processor factories from shared function
+    let processor_factories = get_processor_factories();
 
     // Adding routes
     let router = AccountTransactionsRouter::register()

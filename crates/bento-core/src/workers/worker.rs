@@ -188,7 +188,7 @@ impl Worker {
     }
 
     /// Syncs the blocks at a specific height.
-    async fn sync_at_height(&self, height: u64) -> Result<()> {
+    pub async fn sync_at_height(&self, height: u64) -> Result<()> {
         let groups = self.get_groups();
 
         let block_hash_futures: Vec<_> = groups

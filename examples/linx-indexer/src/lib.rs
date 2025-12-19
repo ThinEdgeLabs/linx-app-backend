@@ -1,5 +1,7 @@
+use bento_core::ProcessorFactory;
 use bigdecimal::BigDecimal;
 use rand::RngCore;
+use std::collections::HashMap;
 
 pub mod constants;
 pub mod crypto;
@@ -9,6 +11,21 @@ pub mod repository;
 pub mod routers;
 pub mod schema;
 pub mod services;
+
+/// Register all processor factories
+pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {
+    let mut processor_factories = HashMap::new();
+    processor_factories
+        .insert("transfers".to_string(), processors::transfer_processor::processor_factory());
+    processor_factories.insert(
+        "contract_calls".to_string(),
+        processors::contract_call_processor::processor_factory(),
+    );
+    processor_factories.insert("dex".to_string(), processors::dex_processor::processor_factory());
+    processor_factories
+        .insert("lending".to_string(), processors::lending_processor::processor_factory());
+    processor_factories
+}
 
 pub enum AddressType {
     P2PKH = 0x00,
