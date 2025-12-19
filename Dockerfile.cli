@@ -25,7 +25,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
     cp /app/target/release/cli /app/cli && \
-    cp /app/target/release/points /app/points
+    cp /app/target/release/points /app/points && \
+    cp /app/target/release/gap_detector /app/gap_detector
+
 
 RUN cargo install diesel_cli --no-default-features --features postgres
 
@@ -43,6 +45,7 @@ WORKDIR /app
 
 COPY --from=builder /app/cli /app/
 COPY --from=builder /app/points /app/
+COPY --from=builder /app/gap_detector /app/
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 
 WORKDIR /app
