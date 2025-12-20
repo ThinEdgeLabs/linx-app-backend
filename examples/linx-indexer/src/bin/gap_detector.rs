@@ -79,27 +79,31 @@ async fn main() -> anyhow::Result<()> {
             // Get processor factories from shared function
             let processor_factories = get_processor_factories();
 
-            // Build processor configs from the config
-            let processor_configs: Vec<_> = config
-                .processors
-                .as_ref()
-                .map(|p| {
-                    p.processors
-                        .iter()
-                        .filter_map(|(name, processor_config)| {
-                            processor_factories.get(name).map(|factory| {
-                                bento_core::config::ProcessorConfig::custom(
-                                    name.clone(),
-                                    *factory,
-                                    Some(serde_json::to_value(processor_config).unwrap()),
-                                )
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            // Build processor configs - start with default processors
+            let mut processor_configs = vec![
+                bento_core::config::ProcessorConfig::BlockProcessor,
+                bento_core::config::ProcessorConfig::EventProcessor,
+                bento_core::config::ProcessorConfig::TxProcessor,
+            ];
 
-            tracing::info!("Registered {} processors for backfill", processor_configs.len());
+            // Add custom processors from config
+            if let Some(processors) = config.processors.as_ref() {
+                for (name, processor_config) in processors.processors.iter() {
+                    if let Some(factory) = processor_factories.get(name) {
+                        processor_configs.push(bento_core::config::ProcessorConfig::custom(
+                            name.clone(),
+                            *factory,
+                            Some(serde_json::to_value(processor_config).unwrap()),
+                        ));
+                    }
+                }
+            }
+
+            tracing::info!(
+                "Registered {} processors for backfill (3 default + {} custom)",
+                processor_configs.len(),
+                processor_configs.len() - 3
+            );
 
             // Create worker
             let worker = Worker::new(

@@ -6,7 +6,6 @@ use diesel::sql_types::{BigInt, Nullable};
 use diesel_async::RunQueryDsl;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 use utoipa::ToSchema;
 

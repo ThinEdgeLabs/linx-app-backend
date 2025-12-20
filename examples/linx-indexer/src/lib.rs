@@ -12,7 +12,7 @@ pub mod routers;
 pub mod schema;
 pub mod services;
 
-/// Register all processor factories
+/// Register all custom processor factories
 pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {
     let mut processor_factories = HashMap::new();
     processor_factories
