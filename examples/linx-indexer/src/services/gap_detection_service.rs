@@ -90,10 +90,8 @@ impl GapDetectionService {
 
         let mut conn = self.db_pool.get().await?;
         println!("Running gap detection SQL query (min_height: {})...", min_height_filter);
-        let missing_heights: Vec<MissingHeight> = diesel::sql_query(sql)
-            .bind::<BigInt, _>(min_height_filter)
-            .load(&mut conn)
-            .await?;
+        let missing_heights: Vec<MissingHeight> =
+            diesel::sql_query(sql).bind::<BigInt, _>(min_height_filter).load(&mut conn).await?;
         println!("Gap detection query completed. Processing results...");
 
         // Group by chain
@@ -138,7 +136,17 @@ impl GapDetectionService {
     /// # Arguments
     /// * `worker` - Worker instance to use for backfilling
     /// * `min_height` - Optional minimum height to start gap detection from
-    pub async fn backfill_gaps(&self, worker: &Worker, min_height: Option<i64>) -> Result<()> {
+    /// * `delay_ms` - Delay in milliseconds between each height to avoid overwhelming the node (default: 100ms)
+    pub async fn backfill_gaps(
+        &self,
+        worker: &Worker,
+        min_height: Option<i64>,
+        delay_ms: Option<u64>,
+    ) -> Result<()> {
+        use tokio::time::{Duration, sleep};
+
+        let delay = Duration::from_millis(delay_ms.unwrap_or(100));
+
         tracing::info!("Starting backfill of all detected gaps");
 
         let gaps = self.detect_block_gaps(min_height).await?;
@@ -151,7 +159,12 @@ impl GapDetectionService {
         all_heights.sort_unstable();
         all_heights.dedup();
 
-        tracing::info!("Backfilling {} blocks across {} chains", all_heights.len(), gaps.len());
+        tracing::info!(
+            "Backfilling {} blocks across {} chains (delay: {}ms per height)",
+            all_heights.len(),
+            gaps.len(),
+            delay.as_millis()
+        );
 
         let mut success_count = 0;
         let mut failure_count = 0;
@@ -166,11 +179,7 @@ impl GapDetectionService {
                 }
                 Err(e) => {
                     failure_count += 1;
-                    tracing::error!(
-                        "✗ Failed to backfill height {}: {}",
-                        height,
-                        e
-                    );
+                    tracing::error!("✗ Failed to backfill height {}: {}", height, e);
 
                     // Log the full error chain for debugging
                     let mut source = e.source();
@@ -183,6 +192,11 @@ impl GapDetectionService {
 
                     // Continue with other blocks even if one fails
                 }
+            }
+
+            // Add delay to avoid overwhelming the node, but skip delay after the last height
+            if idx < all_heights.len() - 1 {
+                sleep(delay).await;
             }
         }
 

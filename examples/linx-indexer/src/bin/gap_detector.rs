@@ -10,8 +10,8 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let config_path = std::env::args().nth(2).unwrap_or_else(|| "config.toml".to_string());
-
+    //let config_path = std::env::args().nth(2).unwrap_or_else(|| "config.toml".to_string());
+    let config_path = "config.toml";
     let config = load_config(&config_path).expect("Failed to load config");
 
     let db_pool = new_db_pool(&config.worker.database_url, None).await?;
@@ -23,8 +23,17 @@ async fn main() -> anyhow::Result<()> {
         .find(|arg| arg.starts_with("--min-height="))
         .and_then(|arg| arg.strip_prefix("--min-height=").and_then(|val| val.parse().ok()));
 
+    // Parse optional --delay parameter (in milliseconds)
+    let delay_ms: Option<u64> = std::env::args()
+        .find(|arg| arg.starts_with("--delay="))
+        .and_then(|arg| arg.strip_prefix("--delay=").and_then(|val| val.parse().ok()));
+
     if let Some(h) = min_height {
         println!("Using minimum height filter: {}", h);
+    }
+
+    if let Some(d) = delay_ms {
+        println!("Using delay between heights: {}ms", d);
     }
 
     match std::env::args().nth(1).as_deref() {
@@ -105,32 +114,31 @@ async fn main() -> anyhow::Result<()> {
             .await?;
 
             // Run backfill
-            gap_service.backfill_gaps(&worker, min_height).await?;
+            gap_service.backfill_gaps(&worker, min_height, delay_ms).await?;
 
             println!("\n=== Backfill Complete ===");
             println!("All gaps have been backfilled successfully");
         }
         _ => {
-            println!("Usage: gap_detector [detect|backfill] [config-path] [--min-height=N]");
+            println!("Usage: gap_detector [detect|backfill] [--min-height=N] [--delay=MS]");
             println!();
             println!("Commands:");
             println!("  detect      - Detect and report missing block heights");
             println!("  backfill    - Backfill all detected gaps through ALL processors");
             println!();
             println!("Arguments:");
-            println!("  config-path     - Path to config file (default: config.toml)");
             println!("  --min-height=N  - Only detect/backfill gaps at or above this height");
+            println!("                    (useful for dapps deployed after genesis)");
+            println!("  --delay=MS      - Delay in milliseconds between each height during backfill");
+            println!("                    (default: 100ms, helps avoid 503 errors from node)");
             println!();
             println!("Examples:");
-            println!("  cargo run -p linx-indexer --bin gap_detector -- detect");
-            println!("  cargo run -p linx-indexer --bin gap_detector -- backfill");
-            println!("  cargo run -p linx-indexer --bin gap_detector -- detect config.toml");
-            println!(
-                "  cargo run -p linx-indexer --bin gap_detector -- detect --min-height=1000000"
-            );
-            println!(
-                "  cargo run -p linx-indexer --bin gap_detector -- backfill --min-height=1000000"
-            );
+            println!("  gap_detector detect");
+            println!("  gap_detector backfill");
+            println!("  gap_detector detect --min-height=1000000");
+            println!("  gap_detector backfill --min-height=1000000");
+            println!("  gap_detector backfill --delay=200");
+            println!("  gap_detector backfill --min-height=1000000 --delay=200");
         }
     }
 
