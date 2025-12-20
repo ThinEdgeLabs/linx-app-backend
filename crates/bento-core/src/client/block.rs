@@ -100,8 +100,16 @@ impl BlockProvider for Client {
             height, from_group, to_group
         );
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
-        let response: BlockHashesResponse = self.inner.get(url).send().await?.json().await?;
-        Ok(response.headers)
+        let response = self.inner.get(url).send().await?;
+        match response.error_for_status() {
+            Ok(res) => {
+                let json: BlockHashesResponse = res.json().await?;
+                Ok(json.headers)
+            }
+            Err(err) => {
+                Err(anyhow::anyhow!("API returned error status: {}", err.status().unwrap()))
+            }
+        }
     }
 
     async fn get_chain_info(&self, from_group: u32, to_group: u32) -> Result<ChainInfo> {
