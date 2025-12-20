@@ -189,19 +189,35 @@ impl Worker {
 
     /// Syncs the blocks at a specific height.
     pub async fn sync_at_height(&self, height: u64) -> Result<()> {
+        use anyhow::Context;
+
         let groups = self.get_groups();
 
         let block_hash_futures: Vec<_> = groups
             .iter()
             .map(|(from_group, to_group)| {
-                self.client.get_block_hash_by_height(height, *from_group, *to_group)
+                let height = height;
+                let from = *from_group;
+                let to = *to_group;
+                async move {
+                    self.client
+                        .get_block_hash_by_height(height, from, to)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to fetch block hash for height {} on chain ({}, {})",
+                                height, from, to
+                            )
+                        })
+                }
             })
             .collect();
 
         let block_hashes = futures::future::join_all(block_hash_futures)
             .await
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| format!("Failed to fetch block hashes for height {}", height))?;
 
         if block_hashes.is_empty() {
             tracing::warn!("No blocks found at height {}", height);
@@ -210,15 +226,37 @@ impl Worker {
 
         let block_futures: Vec<_> = block_hashes
             .iter()
-            .map(|hashes| self.client.get_block_and_events_by_hash(&hashes[0]))
+            .enumerate()
+            .map(|(idx, hashes)| {
+                let hash = hashes[0].clone();
+                async move {
+                    self.client
+                        .get_block_and_events_by_hash(&hash)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to fetch block and events for hash {} (chain index {})",
+                                hash, idx
+                            )
+                        })
+                }
+            })
             .collect();
+
         let blocks = futures::future::join_all(block_futures)
             .await
             .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| format!("Failed to fetch blocks and events for height {}", height))?;
 
-        self.run_pipeline(vec![BlockBatch { blocks, range: BlockRange { from_ts: 0, to_ts: 0 } }])
-            .await?;
+        tracing::info!("Fetched {} blocks at height {}", blocks.len(), height);
+
+        self.run_pipeline(vec![BlockBatch {
+            blocks,
+            range: BlockRange { from_ts: 0, to_ts: 0 },
+        }])
+        .await
+        .with_context(|| format!("Failed to process blocks at height {} through pipeline", height))?;
 
         Ok(())
     }

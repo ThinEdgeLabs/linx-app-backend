@@ -6,6 +6,7 @@ use diesel::sql_types::{BigInt, Nullable};
 use diesel_async::RunQueryDsl;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
@@ -152,19 +153,52 @@ impl GapDetectionService {
 
         tracing::info!("Backfilling {} blocks across {} chains", all_heights.len(), gaps.len());
 
-        for height in all_heights {
-            match worker.sync_at_height(height).await {
+        let mut success_count = 0;
+        let mut failure_count = 0;
+
+        for (idx, height) in all_heights.iter().enumerate() {
+            tracing::info!("Backfilling height {} ({}/{})...", height, idx + 1, all_heights.len());
+
+            match worker.sync_at_height(*height).await {
                 Ok(_) => {
-                    tracing::info!("Successfully backfilled height {}", height);
+                    success_count += 1;
+                    tracing::info!("✓ Successfully backfilled height {}", height);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to backfill height {}: {}", height, e);
+                    failure_count += 1;
+                    tracing::error!(
+                        "✗ Failed to backfill height {}: {}",
+                        height,
+                        e
+                    );
+
+                    // Log the full error chain for debugging
+                    let mut source = e.source();
+                    let mut depth = 1;
+                    while let Some(err) = source {
+                        tracing::error!("  Caused by (level {}): {}", depth, err);
+                        source = err.source();
+                        depth += 1;
+                    }
+
                     // Continue with other blocks even if one fails
                 }
             }
         }
 
-        tracing::info!("Completed backfill of all gaps");
+        tracing::info!(
+            "Backfill completed: {} successful, {} failed out of {} total",
+            success_count,
+            failure_count,
+            all_heights.len()
+        );
+
+        if failure_count > 0 {
+            tracing::warn!(
+                "Some blocks failed to backfill. Re-run the command to retry failed blocks."
+            );
+        }
+
         Ok(())
     }
 }
