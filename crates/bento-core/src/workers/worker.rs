@@ -90,8 +90,8 @@ impl Worker {
             Some(ts) => ts,
             None => {
                 // Make sure we have the genesis and one more block synced
-                self.sync_at_height(0).await?;
-                self.sync_at_height(1).await?;
+                self.sync_at_height(0, None).await?;
+                self.sync_at_height(1, None).await?;
                 // Take the min timestamp of the blocks at height 1
                 let blocks = get_blocks_at_height(&self.db_pool, 1).await?;
                 blocks.iter().map(|b| b.timestamp).min().unwrap().and_utc().timestamp_millis()
@@ -188,10 +188,22 @@ impl Worker {
     }
 
     /// Syncs the blocks at a specific height.
-    pub async fn sync_at_height(&self, height: u64) -> Result<()> {
+    ///
+    /// # Arguments
+    /// * `height` - The block height to sync
+    /// * `chains_to_sync` - Optional list of specific (chain_from, chain_to) pairs to fetch.
+    ///                      If None, fetches from all 16 chains.
+    pub async fn sync_at_height(
+        &self,
+        height: u64,
+        chains_to_sync: Option<Vec<(u32, u32)>>,
+    ) -> Result<()> {
         use anyhow::Context;
 
-        let groups = self.get_groups();
+        let groups = match chains_to_sync {
+            Some(chains) => chains,
+            None => self.get_groups(),
+        };
 
         let block_hash_futures: Vec<_> = groups
             .iter()

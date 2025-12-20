@@ -151,13 +151,20 @@ impl GapDetectionService {
 
         let gaps = self.detect_block_gaps(min_height).await?;
 
-        // Collect all unique heights that need to be backfilled
-        let mut all_heights: Vec<u64> =
-            gaps.iter().flat_map(|g| g.missing_heights.iter().map(|&h| h as u64)).collect();
+        // Build a map of height -> chains that need that height
+        let mut height_to_chains: HashMap<u64, Vec<(u32, u32)>> = HashMap::new();
+        for gap in &gaps {
+            for &height in &gap.missing_heights {
+                height_to_chains
+                    .entry(height as u64)
+                    .or_default()
+                    .push((gap.chain_from as u32, gap.chain_to as u32));
+            }
+        }
 
-        // Remove duplicates and sort
+        // Get all unique heights and sort them
+        let mut all_heights: Vec<u64> = height_to_chains.keys().copied().collect();
         all_heights.sort_unstable();
-        all_heights.dedup();
 
         tracing::info!(
             "Backfilling {} blocks across {} chains (delay: {}ms per height)",
@@ -170,12 +177,25 @@ impl GapDetectionService {
         let mut failure_count = 0;
 
         for (idx, height) in all_heights.iter().enumerate() {
-            tracing::info!("Backfilling height {} ({}/{})...", height, idx + 1, all_heights.len());
+            let chains = height_to_chains.get(height).unwrap();
 
-            match worker.sync_at_height(*height).await {
+            tracing::info!(
+                "Backfilling height {} ({}/{}) for {} chains: {:?}",
+                height,
+                idx + 1,
+                all_heights.len(),
+                chains.len(),
+                chains
+            );
+
+            match worker.sync_at_height(*height, Some(chains.clone())).await {
                 Ok(_) => {
                     success_count += 1;
-                    tracing::info!("✓ Successfully backfilled height {}", height);
+                    tracing::info!(
+                        "✓ Successfully backfilled height {} for {} chains",
+                        height,
+                        chains.len()
+                    );
                 }
                 Err(e) => {
                     failure_count += 1;

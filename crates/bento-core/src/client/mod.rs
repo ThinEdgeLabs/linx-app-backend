@@ -32,9 +32,8 @@ impl Client {
                 Duration::from_millis(100), // Minimum retry delay
                 Duration::from_secs(1),     // Maximum retry delay
             )
-            .build_with_max_retries(2); // Maximum number of retries
+            .build_with_max_retries(3);
 
-        // Create client with retry middleware
         let client = ClientBuilder::new(ReqwestClient::new())
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
