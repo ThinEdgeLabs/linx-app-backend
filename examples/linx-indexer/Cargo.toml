@@ -11,6 +11,10 @@ path = "src/bin/main.rs"
 name = "points"
 path = "src/bin/points.rs"
 
+[[bin]]
+name = "snapshots"
+path = "src/bin/snapshots.rs"
+
 [dependencies]
 bento-core = { path = "../../crates/bento-core" }
 bento-cli = { path = "../../crates/bento-cli" }

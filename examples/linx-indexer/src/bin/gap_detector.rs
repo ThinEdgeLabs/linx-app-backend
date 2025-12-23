@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
 
     //let config_path = std::env::args().nth(2).unwrap_or_else(|| "config.toml".to_string());
     let config_path = "config.toml";
-    let config = load_config(&config_path).expect("Failed to load config");
+    let config = load_config(config_path).expect("Failed to load config");
 
     let db_pool = new_db_pool(&config.worker.database_url, None).await?;
 

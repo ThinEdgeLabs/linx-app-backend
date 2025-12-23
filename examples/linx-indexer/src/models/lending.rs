@@ -120,3 +120,38 @@ pub struct MarketState {
     pub last_update: NaiveDateTime,
     pub fee: BigDecimal,
 }
+
+#[derive(Queryable, Insertable, Debug, Clone, Serialize, AsChangeset, ToSchema)]
+#[diesel(table_name = schema::market_state_snapshots)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct MarketStateSnapshot {
+    pub id: i32,
+    pub market_id: String,
+    #[schema(value_type = String)]
+    pub total_supply_assets: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_supply_shares: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_borrow_assets: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_borrow_shares: BigDecimal,
+    #[schema(value_type = String)]
+    pub interest_rate: Option<BigDecimal>,
+    #[schema(value_type = String)]
+    pub snapshot_timestamp: NaiveDateTime,
+    #[schema(value_type = String)]
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::market_state_snapshots)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMarketStateSnapshot {
+    pub market_id: String,
+    pub total_supply_assets: BigDecimal,
+    pub total_supply_shares: BigDecimal,
+    pub total_borrow_assets: BigDecimal,
+    pub total_borrow_shares: BigDecimal,
+    pub interest_rate: Option<BigDecimal>,
+    pub snapshot_timestamp: NaiveDateTime,
+}

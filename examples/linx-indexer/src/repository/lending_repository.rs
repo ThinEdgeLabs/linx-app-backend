@@ -10,7 +10,10 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use mockall::automock;
 
 use crate::{
-    models::{DepositSnapshot, LendingEvent, Market, NewDepositSnapshot, NewLendingEvent, Position},
+    models::{
+        DepositSnapshot, LendingEvent, Market, NewDepositSnapshot, NewLendingEvent,
+        NewMarketStateSnapshot, Position,
+    },
     schema::{self},
 };
 use diesel_async::RunQueryDsl;
@@ -188,6 +191,29 @@ impl LendingRepository {
         Ok(())
     }
 
+    pub async fn insert_market_state_snapshots(
+        &self,
+        snapshots: &[NewMarketStateSnapshot],
+    ) -> Result<()> {
+        if snapshots.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.db_pool.get().await?;
+
+        diesel::insert_into(schema::market_state_snapshots::table)
+            .values(snapshots)
+            .on_conflict((
+                schema::market_state_snapshots::market_id,
+                schema::market_state_snapshots::snapshot_timestamp,
+            ))
+            .do_nothing()
+            .execute(&mut conn)
+            .await?;
+
+        Ok(())
+    }
+
     /// Private helper methods
 
     async fn calculate_user_position(
@@ -231,12 +257,23 @@ impl LendingRepository {
                 "Liquidate" => {
                     borrow_shares -= &event.shares;
                     collateral -= &event.amount;
-                    // Extract repaidAssets from fields
-                    if let Some(repaid_assets) = event.fields.get("repaidAssets") {
-                        if let Some(repaid_str) = repaid_assets.as_str() {
-                            if let Ok(repaid) = repaid_str.parse::<BigDecimal>() {
-                                borrowed_amount -= repaid;
-                            }
+
+                    let repaid_assets_index = 3;
+                    let repaid_assets: Option<bigdecimal::BigDecimal> = event
+                        .fields
+                        .get(repaid_assets_index)
+                        .and_then(|value| value.as_object())
+                        .and_then(|obj| obj.get("value"))
+                        .and_then(|s| s.as_str())
+                        .and_then(|s| s.parse().ok());
+
+                    if let Some(repaid_assets) = repaid_assets {
+                        // Repaid assets can be greater than borrowed amount due to interest
+                        // accrued. In that case, we set borrowed amount to zero.
+                        if repaid_assets > borrowed_amount {
+                            borrowed_amount = BigDecimal::from(0);
+                        } else {
+                            borrowed_amount -= &repaid_assets;
                         }
                     }
                 }

@@ -131,6 +131,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    market_state_snapshots (id) {
+        id -> Int4,
+        market_id -> Text,
+        total_supply_assets -> Numeric,
+        total_supply_shares -> Numeric,
+        total_borrow_assets -> Numeric,
+        total_borrow_shares -> Numeric,
+        interest_rate -> Nullable<Numeric>,
+        snapshot_timestamp -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     points_config (id) {
         id -> Int4,
         action_type -> Text,
@@ -293,6 +307,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lending_positions,
     loan_actions,
     loan_details,
+    market_state_snapshots,
     points_config,
     points_multipliers,
     points_seasons,
