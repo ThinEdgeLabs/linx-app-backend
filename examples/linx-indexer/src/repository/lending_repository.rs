@@ -242,7 +242,11 @@ impl LendingRepository {
                 }
                 "Withdraw" => {
                     supply_shares -= &event.shares;
-                    supplied_amount -= &event.amount;
+                    if (&event.amount > &supplied_amount) {
+                        supplied_amount = BigDecimal::from(0);
+                    } else {
+                        supplied_amount -= &event.amount;
+                    }
                 }
                 "Borrow" => {
                     borrow_shares += &event.shares;
@@ -250,7 +254,11 @@ impl LendingRepository {
                 }
                 "Repay" => {
                     borrow_shares -= &event.shares;
-                    borrowed_amount -= &event.amount;
+                    if (&event.amount > &borrowed_amount) {
+                        borrowed_amount = BigDecimal::from(0);
+                    } else {
+                        borrowed_amount -= &event.amount;
+                    }
                 }
                 "SupplyCollateral" => collateral += &event.amount,
                 "WithdrawCollateral" => collateral -= &event.amount,
