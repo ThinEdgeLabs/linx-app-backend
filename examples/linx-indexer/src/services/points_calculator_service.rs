@@ -1,4 +1,3 @@
-use crate::models::LendingEvent;
 use crate::repository::{
     AccountTransactionRepository, AccountTransactionRepositoryTrait, LendingRepository,
     LendingRepositoryTrait, PointsRepository, PointsRepositoryTrait,
@@ -8,7 +7,7 @@ use anyhow::{Context, Result};
 use bento_cli::types::PointsConfig as PointsConfigToml;
 use bento_types::DbPool;
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -131,11 +130,8 @@ where
         // 1. Calculate swap points
         self.calculate_swap_points(date, &points_config, &mut user_activities).await?;
 
-        // 2. Calculate supply points
-        // self.calculate_supply_points(date, &points_config, &mut user_activities).await?;
-
-        // 3. Calculate borrow points
-        self.calculate_borrow_points(date, &points_config, &mut user_activities).await?;
+        // 2. Calculate lending points (supply + borrow)
+        self.calculate_lending_points(date, &points_config, &mut user_activities).await?;
 
         // 4. Finalize base points and volume for each user
         for activity in user_activities.values_mut() {
@@ -173,23 +169,56 @@ where
 
     /// Run as a daemon, calculating points daily at configured time
     pub async fn run_scheduler(&self) -> Result<()> {
+        // Parse configured calculation time (e.g., "01:00")
+        let time_parts: Vec<&str> = self.config.calculation_time.split(':').collect();
+        let target_hour: u32 = time_parts.first()
+            .and_then(|h| h.parse().ok())
+            .context("Invalid calculation_time hour")?;
+        let target_minute: u32 = time_parts
+            .get(1)
+            .and_then(|m| m.parse().ok())
+            .context("Invalid calculation_time minute")?;
+
+        tracing::info!(
+            "Points calculator daemon started. Will run daily at {:02}:{:02}",
+            target_hour,
+            target_minute
+        );
+
         let interval = tokio::time::Duration::from_secs(300); // Check every 5 minutes
         let mut interval_timer = tokio::time::interval(interval);
+        let mut last_run_date: Option<NaiveDate> = None;
 
         loop {
             interval_timer.tick().await;
 
-            // Calculate for yesterday
-            let yesterday = chrono::Utc::now()
-                .date_naive()
-                .pred_opt()
-                .context("Failed to get yesterday's date")?;
+            let now = chrono::Utc::now().naive_utc();
+            let current_date = now.date();
+            let current_hour = now.hour();
+            let current_minute = now.minute();
 
-            tracing::info!("Starting scheduled points calculation for {}...", yesterday);
-            if let Err(e) = self.calculate_points_for_date(yesterday).await {
-                tracing::error!("Error during scheduled points calculation: {}", e);
-            } else {
-                tracing::info!("Scheduled points calculation completed successfully.");
+            // Check if we're at or past the target time and haven't run today yet
+            let should_run = (current_hour > target_hour
+                || (current_hour == target_hour && current_minute >= target_minute))
+                && last_run_date != Some(current_date);
+
+            if should_run {
+                // Calculate for yesterday (complete day)
+                let yesterday =
+                    current_date.pred_opt().context("Failed to get yesterday's date")?;
+
+                tracing::info!(
+                    "Starting scheduled points calculation for {} at {:02}:{:02}...",
+                    yesterday,
+                    current_hour,
+                    current_minute
+                );
+
+                if let Err(e) = self.calculate_points_for_date(yesterday).await {
+                    tracing::error!("Error during scheduled points calculation: {}", e);
+                }
+
+                last_run_date = Some(current_date);
             }
         }
     }
@@ -294,158 +323,156 @@ where
         Ok(())
     }
 
-    /// Calculate supply points based on daily snapshots
-    async fn calculate_supply_points(
+    /// Calculate lending points (supply + borrow) based on position snapshots
+    /// Uses time-weighted calculation: points = amount_usd × points_per_second × time_held
+    async fn calculate_lending_points(
         &self,
         date: NaiveDate,
         points_config: &HashMap<String, crate::models::PointsConfig>,
         user_activities: &mut HashMap<String, UserDailyActivity>,
     ) -> Result<()> {
+        // Get supply and borrow configs
         let supply_config = match points_config.get("supply") {
             Some(config) => config,
             None => {
-                tracing::warn!("No points config found for 'supply' action, skipping");
-                return Ok(());
-            }
-        };
-
-        let points_per_usd_per_day = match &supply_config.points_per_usd_per_day {
-            Some(ppu) => ppu,
-            None => {
                 tracing::warn!(
-                    "No points_per_usd_per_day configured for 'supply' action, skipping"
+                    "No points config found for 'supply' action, skipping lending points"
                 );
                 return Ok(());
             }
         };
 
-        // Get date range
-        let start_time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        let end_time = NaiveDateTime::new(
-            date.succ_opt().context("Failed to get next date")?,
-            NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        );
-
-        // Query deposit snapshots for this date
-        let snapshots =
-            self.lending_repository.get_deposit_snapshots_in_period(start_time, end_time).await?;
-
-        tracing::info!("Processing {} deposit snapshots for date {}", snapshots.len(), date);
-
-        for snapshot in snapshots {
-            // Use amount_usd from snapshot
-            let amount_usd = snapshot.amount_usd;
-
-            // Calculate points (convert to i32 by rounding)
-            let points_earned_decimal = &amount_usd * points_per_usd_per_day;
-            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
-
-            // Get or create user activity
-            let activity = user_activities
-                .entry(snapshot.address.clone())
-                .or_insert_with(|| UserDailyActivity::new(snapshot.address.clone()));
-
-            activity.supply_points += points_earned;
-            activity.supply_volume_usd += &amount_usd;
-            activity.transactions.push(TransactionDetail {
-                action_type: "supply".to_string(),
-                transaction_id: None, // Snapshots don't have a single tx_id
-                amount_usd,
-                points_earned,
-            });
-        }
-
-        Ok(())
-    }
-
-    /// Calculate borrow points from lending events
-    async fn calculate_borrow_points(
-        &self,
-        date: NaiveDate,
-        points_config: &HashMap<String, crate::models::PointsConfig>,
-        user_activities: &mut HashMap<String, UserDailyActivity>,
-    ) -> Result<()> {
         let borrow_config = match points_config.get("borrow") {
             Some(config) => config,
             None => {
-                tracing::warn!("No points config found for 'borrow' action, skipping");
+                tracing::warn!(
+                    "No points config found for 'borrow' action, skipping lending points"
+                );
                 return Ok(());
             }
         };
 
-        let points_per_usd = match &borrow_config.points_per_usd {
+        let supply_points_per_usd_per_day = match &supply_config.points_per_usd_per_day {
             Some(ppu) => ppu,
             None => {
-                tracing::warn!("No points_per_usd configured for 'borrow' action, skipping");
+                tracing::warn!(
+                    "No points_per_usd_per_day configured for 'supply' action, skipping lending points"
+                );
                 return Ok(());
             }
         };
 
-        // Get date range
-        let start_time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        let end_time = NaiveDateTime::new(
+        let borrow_points_per_usd_per_day = match &borrow_config.points_per_usd_per_day {
+            Some(ppu) => ppu,
+            None => {
+                tracing::warn!(
+                    "No points_per_usd_per_day configured for 'borrow' action, skipping lending points"
+                );
+                return Ok(());
+            }
+        };
+
+        // Convert daily rate to per-second rate
+        const SECONDS_PER_DAY: i64 = 86400;
+        let supply_points_per_usd_per_second =
+            supply_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
+        let borrow_points_per_usd_per_second =
+            borrow_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
+
+        // Get date range (midnight to midnight)
+        let day_start = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        let day_end = NaiveDateTime::new(
             date.succ_opt().context("Failed to get next date")?,
             NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
         );
 
-        // Query borrow events for this date
-        let events: Vec<LendingEvent> =
-            self.lending_repository.get_borrow_events_in_period(start_time, end_time).await?;
+        // Query position snapshots for this date
+        let snapshots =
+            self.lending_repository.get_position_snapshots_in_period(day_start, day_end).await?;
 
-        tracing::info!("Processing {} borrow events for date {}", events.len(), date);
+        tracing::info!("Processing {} position snapshots for date {}", snapshots.len(), date);
 
-        for event in events {
-            // Get token info (including decimals and price)
-            let token_info = match self.price_service.get_token_info(&event.token_id).await {
-                Ok(info) => info,
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to get token info for {} in borrow event {}: {}",
-                        event.token_id,
-                        event.transaction_id,
-                        e
-                    );
-                    continue;
-                }
-            };
+        // Group snapshots by user
+        let mut user_snapshots: HashMap<String, Vec<_>> = HashMap::new();
+        for snapshot in snapshots {
+            user_snapshots.entry(snapshot.address.clone()).or_default().push(snapshot);
+        }
 
-            // Convert raw amount to decimal amount using token decimals
-            let decimal_amount = token_info.convert_to_decimal(&event.amount);
+        // Process each user's snapshots
+        for (address, mut snapshots) in user_snapshots {
+            // Sort each user's snapshots by timestamp (critical for time-weighted calculation)
+            snapshots.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            if snapshots.is_empty() {
+                continue;
+            }
 
-            // Get token price
-            let token_price = match self.price_service.get_token_price(&event.token_id).await {
-                Ok(price) => price,
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to get price for token {} in borrow event {}: {}",
-                        event.token_id,
-                        event.transaction_id,
-                        e
-                    );
-                    continue;
-                }
-            };
-
-            // Calculate USD value
-            let amount_usd = &decimal_amount * &token_price;
-
-            // Calculate points (convert to i32 by rounding)
-            let points_earned_decimal = &amount_usd * points_per_usd;
-            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
-
-            // Get or create user activity
             let activity = user_activities
-                .entry(event.on_behalf.clone())
-                .or_insert_with(|| UserDailyActivity::new(event.on_behalf.clone()));
+                .entry(address.clone())
+                .or_insert_with(|| UserDailyActivity::new(address.clone()));
 
-            activity.borrow_points += points_earned;
-            activity.borrow_volume_usd += &amount_usd;
-            activity.transactions.push(TransactionDetail {
-                action_type: "borrow".to_string(),
-                transaction_id: Some(event.transaction_id),
-                amount_usd,
-                points_earned,
-            });
+            // Calculate time-weighted points for this user
+            // Each snapshot represents the position from its timestamp until the next snapshot
+            for i in 0..snapshots.len() {
+                let current_snapshot = &snapshots[i];
+
+                // Determine the time period this snapshot represents
+                let period_start = current_snapshot.timestamp;
+
+                let period_end = if i == snapshots.len() - 1 {
+                    // Last snapshot: assume position held until end of day
+                    day_end
+                } else {
+                    // Use next snapshot's timestamp
+                    snapshots[i + 1].timestamp
+                };
+
+                // Calculate duration in seconds
+                let duration_seconds = (period_end - period_start).num_seconds();
+                if duration_seconds <= 0 {
+                    continue; // Skip invalid durations
+                }
+
+                // Calculate supply points for this period
+                if !current_snapshot.supply_amount_usd.is_zero() {
+                    let supply_points_decimal = &current_snapshot.supply_amount_usd
+                        * &supply_points_per_usd_per_second
+                        * BigDecimal::from(duration_seconds);
+                    let supply_points = supply_points_decimal.round(0).to_i32().unwrap_or(0);
+
+                    activity.supply_points += supply_points;
+                    activity.supply_volume_usd += &current_snapshot.supply_amount_usd;
+                }
+
+                // Calculate borrow points for this period
+                if !current_snapshot.borrow_amount_usd.is_zero() {
+                    let borrow_points_decimal = &current_snapshot.borrow_amount_usd
+                        * &borrow_points_per_usd_per_second
+                        * BigDecimal::from(duration_seconds);
+                    let borrow_points = borrow_points_decimal.round(0).to_i32().unwrap_or(0);
+
+                    activity.borrow_points += borrow_points;
+                    activity.borrow_volume_usd += &current_snapshot.borrow_amount_usd;
+                }
+            }
+
+            // Add aggregate transactions for the day (one for supply, one for borrow)
+            if activity.supply_points > 0 {
+                activity.transactions.push(TransactionDetail {
+                    action_type: "supply".to_string(),
+                    transaction_id: None,
+                    amount_usd: activity.supply_volume_usd.clone(),
+                    points_earned: activity.supply_points,
+                });
+            }
+
+            if activity.borrow_points > 0 {
+                activity.transactions.push(TransactionDetail {
+                    action_type: "borrow".to_string(),
+                    transaction_id: None,
+                    amount_usd: activity.borrow_volume_usd.clone(),
+                    points_earned: activity.borrow_points,
+                });
+            }
         }
 
         Ok(())
@@ -666,12 +693,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AccountTransaction, LendingEvent, SwapTransactionDto};
     use crate::repository::{
         MockAccountTransactionRepositoryTrait, MockLendingRepositoryTrait,
         MockPointsRepositoryTrait,
     };
-    use crate::services::price::linx_price_service::TokenInfo;
     use crate::services::price::token_service::MockTokenServiceTrait;
     use bigdecimal::BigDecimal;
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
@@ -696,146 +721,8 @@ mod tests {
             }
         }
 
-        fn with_borrow_config(mut self, points_per_usd: &str) -> Self {
-            let points_per_usd = points_per_usd.to_string();
-            self.points_repo.expect_get_points_config().returning(move || {
-                Ok(vec![crate::models::PointsConfig {
-                    id: 1,
-                    action_type: "borrow".to_string(),
-                    points_per_usd: Some(BigDecimal::from_str(&points_per_usd).unwrap()),
-                    points_per_usd_per_day: None,
-                    is_active: true,
-                    created_at: chrono::Utc::now().naive_utc(),
-                    updated_at: chrono::Utc::now().naive_utc(),
-                }])
-            });
-            self
-        }
-
-        fn with_swap_and_borrow_config(mut self, swap_ppu: &str, borrow_ppu: &str) -> Self {
-            let swap_ppu = swap_ppu.to_string();
-            let borrow_ppu = borrow_ppu.to_string();
-            self.points_repo.expect_get_points_config().returning(move || {
-                Ok(vec![
-                    crate::models::PointsConfig {
-                        id: 1,
-                        action_type: "swap".to_string(),
-                        points_per_usd: Some(BigDecimal::from_str(&swap_ppu).unwrap()),
-                        points_per_usd_per_day: None,
-                        is_active: true,
-                        created_at: chrono::Utc::now().naive_utc(),
-                        updated_at: chrono::Utc::now().naive_utc(),
-                    },
-                    crate::models::PointsConfig {
-                        id: 2,
-                        action_type: "borrow".to_string(),
-                        points_per_usd: Some(BigDecimal::from_str(&borrow_ppu).unwrap()),
-                        points_per_usd_per_day: None,
-                        is_active: true,
-                        created_at: chrono::Utc::now().naive_utc(),
-                        updated_at: chrono::Utc::now().naive_utc(),
-                    },
-                ])
-            });
-            self
-        }
-
-        fn with_swaps(mut self, swaps: Vec<SwapTransactionDto>) -> Self {
-            self.account_repo.expect_get_swaps_in_period().returning(move |_, _| Ok(swaps.clone()));
-            self
-        }
-
-        fn with_swaps_checked_dates(
-            mut self,
-            expected_start: NaiveDateTime,
-            expected_end: NaiveDateTime,
-            swaps: Vec<SwapTransactionDto>,
-        ) -> Self {
-            self.account_repo
-                .expect_get_swaps_in_period()
-                .with(eq(expected_start), eq(expected_end))
-                .returning(move |_, _| Ok(swaps.clone()));
-            self
-        }
-
-        fn with_borrow_events(mut self, events: Vec<LendingEvent>) -> Self {
-            self.lending_repo
-                .expect_get_borrow_events_in_period()
-                .returning(move |_, _| Ok(events.clone()));
-            self
-        }
-
-        fn with_borrow_events_checked_dates(
-            mut self,
-            expected_start: NaiveDateTime,
-            expected_end: NaiveDateTime,
-            events: Vec<LendingEvent>,
-        ) -> Self {
-            self.lending_repo
-                .expect_get_borrow_events_in_period()
-                .with(eq(expected_start), eq(expected_end))
-                .returning(move |_, _| Ok(events.clone()));
-            self
-        }
-
-        fn with_token_price(mut self, token_id: &'static str, price: &str) -> Self {
-            let price_value = BigDecimal::from_str(price).unwrap();
-            self.price_service
-                .expect_get_token_price()
-                .with(eq(token_id))
-                .returning(move |_| Ok(price_value.clone()));
-            self
-        }
-
-        fn with_token_info(mut self, token_id: &'static str, decimals: u8, price: &str) -> Self {
-            let token_id_owned = token_id.to_string();
-            let price_value = price.parse::<f64>().unwrap();
-
-            // Mock get_token_info - allow multiple calls
-            self.price_service.expect_get_token_info().with(eq(token_id)).times(..).returning(
-                move |_| {
-                    Ok(TokenInfo {
-                        id: token_id_owned.clone(),
-                        name: "Test Token".to_string(),
-                        symbol: "TEST".to_string(),
-                        decimals,
-                        description: "".to_string(),
-                        logo_uri: "".to_string(),
-                        price_usd: price_value,
-                    })
-                },
-            );
-
-            // Also mock get_token_price for the same token - allow multiple calls
-            let price_bd = BigDecimal::from_str(price).unwrap();
-            self.price_service
-                .expect_get_token_price()
-                .with(eq(token_id))
-                .times(..)
-                .returning(move |_| Ok(price_bd.clone()));
-
-            self
-        }
-
         fn with_no_swaps(mut self) -> Self {
             self.account_repo.expect_get_swaps_in_period().returning(|_, _| Ok(vec![]));
-            self
-        }
-
-        fn with_no_supply(mut self) -> Self {
-            self.lending_repo.expect_get_deposit_snapshots_in_period().returning(|_, _| Ok(vec![]));
-            self
-        }
-
-        fn with_no_supply_checked_dates(
-            mut self,
-            expected_start: NaiveDateTime,
-            expected_end: NaiveDateTime,
-        ) -> Self {
-            self.lending_repo
-                .expect_get_deposit_snapshots_in_period()
-                .with(eq(expected_start), eq(expected_end))
-                .returning(|_, _| Ok(vec![]));
             self
         }
 
@@ -915,157 +802,356 @@ mod tests {
         }
     }
 
-    fn borrow_event(
-        on_behalf: &str,
-        token_id: &str,
-        amount: &str,
-        time: NaiveDateTime,
-    ) -> LendingEvent {
-        LendingEvent {
-            id: 1,
-            market_id: "market1".to_string(),
-            event_type: "Borrow".to_string(),
-            token_id: token_id.to_string(),
-            on_behalf: on_behalf.to_string(),
-            amount: BigDecimal::from_str(amount).unwrap(),
-            shares: BigDecimal::zero(),
-            transaction_id: format!("tx_{}", on_behalf),
-            event_index: 0,
-            block_time: time,
-            created_at: time,
-            fields: serde_json::json!({}),
-        }
-    }
+    // ==================== Time-Weighted Lending Points Tests ====================
 
-    fn swap_event(
+    fn position_snapshot(
         address: &str,
-        token_in: &str,
-        amount_in: &str,
-        time: NaiveDateTime,
-    ) -> SwapTransactionDto {
-        SwapTransactionDto {
-            account_transaction: AccountTransaction {
-                id: 1,
-                address: address.to_string(),
-                tx_type: "swap".to_string(),
-                from_group: 0,
-                to_group: 0,
-                block_height: 1000,
-                tx_id: format!("swap_tx_{}", address),
-                timestamp: time,
-            },
-            swap: crate::models::SwapDetails {
-                id: 1,
-                token_in: token_in.to_string(),
-                token_out: "tokenB".to_string(),
-                amount_in: BigDecimal::from_str(amount_in).unwrap(),
-                amount_out: BigDecimal::zero(),
-                pool_address: "pool1".to_string(),
-                tx_id: format!("swap_tx_{}", address),
-            },
+        market_id: &str,
+        supply_usd: &str,
+        borrow_usd: &str,
+        timestamp: NaiveDateTime,
+    ) -> crate::models::PositionSnapshot {
+        crate::models::PositionSnapshot {
+            id: 1,
+            address: address.to_string(),
+            market_id: market_id.to_string(),
+            supply_amount: BigDecimal::zero(),
+            supply_amount_usd: BigDecimal::from_str(supply_usd).unwrap(),
+            borrow_amount: BigDecimal::zero(),
+            borrow_amount_usd: BigDecimal::from_str(borrow_usd).unwrap(),
+            timestamp,
         }
     }
 
     #[tokio::test]
-    async fn test_multiple_users_multiple_events() {
-        // Scenario: user1 borrows 100 tokenA and 50 tokenA, user2 borrows 200 tokenB
-        // Expected: user1 gets 3000 points, user2 gets 2000 points
+    async fn test_lending_single_snapshot_full_day() {
+        // Scenario: User has one snapshot for the entire day (00:05)
+        // Position: $1000 supplied, $0 borrowed
+        // Config: 10 points per USD per day for supply
+        // Expected: $1000 × (10/86400) × 86100 = 9,965 points
+        // (snapshot at 00:05 held until end of day = 86,100 seconds out of 86,400)
 
         let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
-        let time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+        let snapshot_time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 5, 0).unwrap());
 
-        let events = vec![
-            borrow_event("user1", "tokenA", "100", time),
-            borrow_event("user2", "tokenB", "200", time),
-            borrow_event("user1", "tokenA", "50", time),
-        ];
+        let snapshots = vec![position_snapshot("user1", "market1", "1000", "0", snapshot_time)];
 
-        let service = TestSetup::new()
-            .with_borrow_config("2.0")
-            .with_borrow_events(events)
-            .with_token_info("tokenA", 0, "10") // 0 decimals means amount is already in decimal form
-            .with_token_info("tokenB", 0, "5")
+        let mut setup = TestSetup::new();
+        setup.points_repo.expect_get_points_config().returning(|| {
+            Ok(vec![
+                crate::models::PointsConfig {
+                    id: 1,
+                    action_type: "supply".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("10").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+                crate::models::PointsConfig {
+                    id: 2,
+                    action_type: "borrow".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("5").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+            ])
+        });
+
+        setup
+            .lending_repo
+            .expect_get_position_snapshots_in_period()
+            .returning(move |_, _| Ok(snapshots.clone()));
+
+        let service = setup
             .with_no_swaps()
-            .with_no_supply()
-            .with_no_multipliers()
-            .with_no_referrals()
-            .with_no_previous_snapshots()
-            .with_active_season(1)
-            .expect_snapshots(|snapshots| {
-                snapshots.len() == 2
-                    && snapshots.iter().any(|s| {
-                        s.address == "user1" && s.borrow_points == 3000 && s.season_id == 1
-                    })
-                    && snapshots.iter().any(|s| {
-                        s.address == "user2" && s.borrow_points == 2000 && s.season_id == 1
-                    })
-            })
-            .expect_transactions(|txs| txs.len() == 3)
-            .build();
-
-        let result = service.calculate_points_for_date(date).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_boundary_date_range() {
-        // Scenario: Verify that repository methods are called with correct date boundaries
-        // Expected: start_time = date 00:00:00, end_time = next_day 00:00:00
-
-        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
-        let expected_start = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        let expected_end =
-            NaiveDateTime::new(date.succ_opt().unwrap(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-
-        let events = vec![borrow_event("user1", "tokenA", "100", expected_start)];
-
-        let service = TestSetup::new()
-            .with_borrow_config("2.0")
-            .with_borrow_events_checked_dates(expected_start, expected_end, events)
-            .with_token_info("tokenA", 0, "10")
-            .with_no_supply_checked_dates(expected_start, expected_end)
-            .with_swaps_checked_dates(expected_start, expected_end, vec![])
-            .with_no_multipliers()
-            .with_no_referrals()
-            .with_no_previous_snapshots()
-            .with_active_season(1)
-            .expect_snapshots(|snapshots| snapshots.len() == 1)
-            .expect_transactions(|txs| txs.len() == 1)
-            .build();
-
-        let result = service.calculate_points_for_date(date).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_existing_user_activity() {
-        // Scenario: user1 swaps 500 tokenA and borrows 100 tokenA
-        // Expected: Both activities counted, swap: 5000pts, borrow: 2000pts, total: 7000pts
-
-        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
-        let time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
-
-        let service = TestSetup::new()
-            .with_swap_and_borrow_config("1.0", "2.0")
-            .with_swaps(vec![swap_event("user1", "tokenA", "500", time)])
-            .with_borrow_events(vec![borrow_event("user1", "tokenA", "100", time)])
-            .with_token_info("tokenA", 0, "10")
-            .with_no_supply()
             .with_no_multipliers()
             .with_no_referrals()
             .with_no_previous_snapshots()
             .with_active_season(1)
             .expect_snapshots(|snapshots| {
                 if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
-                    s.swap_points == 5000
-                        && s.borrow_points == 2000
-                        && s.base_points_total == 7000
+                    s.supply_points == 9965 && s.borrow_points == 0 && s.season_id == 1
+                } else {
+                    false
+                }
+            })
+            .expect_transactions(|txs| txs.len() == 1 && txs[0].action_type == "supply")
+            .build();
+
+        let result = service.calculate_points_for_date(date).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_lending_multiple_snapshots_time_weighted() {
+        // Scenario: User has multiple snapshots throughout the day
+        // 00:05-06:00 (5h55m = 21300s): $1000 supplied
+        // 06:00-12:00 (6h = 21600s): $2000 supplied (doubled position)
+        // 12:00-24:00 (12h = 43200s): $500 supplied (reduced position)
+        // Config: 10 points per USD per day = 10/86400 per second
+        // Expected: (1000×10/86400×21300) + (2000×10/86400×21600) + (500×10/86400×43200)
+        //         = 2465 + 5000 + 2500 = 9,965 points
+
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let snapshot1 = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 5, 0).unwrap());
+        let snapshot2 = NaiveDateTime::new(date, NaiveTime::from_hms_opt(6, 0, 0).unwrap());
+        let snapshot3 = NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+
+        let snapshots = vec![
+            position_snapshot("user1", "market1", "1000", "0", snapshot1),
+            position_snapshot("user1", "market1", "2000", "0", snapshot2),
+            position_snapshot("user1", "market1", "500", "0", snapshot3),
+        ];
+
+        let mut setup = TestSetup::new();
+        setup.points_repo.expect_get_points_config().returning(|| {
+            Ok(vec![
+                crate::models::PointsConfig {
+                    id: 1,
+                    action_type: "supply".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("10").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+                crate::models::PointsConfig {
+                    id: 2,
+                    action_type: "borrow".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("5").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+            ])
+        });
+
+        setup
+            .lending_repo
+            .expect_get_position_snapshots_in_period()
+            .returning(move |_, _| Ok(snapshots.clone()));
+
+        let service = setup
+            .with_no_swaps()
+            .with_no_multipliers()
+            .with_no_referrals()
+            .with_no_previous_snapshots()
+            .with_active_season(1)
+            .expect_snapshots(|snapshots| {
+                if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
+                    s.supply_points == 9965 && s.season_id == 1
+                } else {
+                    false
+                }
+            })
+            .expect_transactions(|_| true)
+            .build();
+
+        let result = service.calculate_points_for_date(date).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_lending_supply_and_borrow_combined() {
+        // Scenario: User has both supply and borrow positions
+        // Single snapshot at 00:05 held until end of day (86100 seconds)
+        // Position: $1000 supplied, $500 borrowed
+        // Config: 10 points/USD/day for supply, 5 points/USD/day for borrow
+        // Expected: Supply: 1000×(10/86400)×86100 = 9965, Borrow: 500×(5/86400)×86100 = 2491, Total: 12456
+
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let snapshot_time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 5, 0).unwrap());
+
+        let snapshots = vec![position_snapshot("user1", "market1", "1000", "500", snapshot_time)];
+
+        let mut setup = TestSetup::new();
+        setup.points_repo.expect_get_points_config().returning(|| {
+            Ok(vec![
+                crate::models::PointsConfig {
+                    id: 1,
+                    action_type: "supply".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("10").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+                crate::models::PointsConfig {
+                    id: 2,
+                    action_type: "borrow".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("5").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+            ])
+        });
+
+        setup
+            .lending_repo
+            .expect_get_position_snapshots_in_period()
+            .returning(move |_, _| Ok(snapshots.clone()));
+
+        let service = setup
+            .with_no_swaps()
+            .with_no_multipliers()
+            .with_no_referrals()
+            .with_no_previous_snapshots()
+            .with_active_season(1)
+            .expect_snapshots(|snapshots| {
+                if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
+                    s.supply_points == 9965
+                        && s.borrow_points == 2491
+                        && s.base_points_total == 12456
                         && s.season_id == 1
                 } else {
                     false
                 }
             })
-            .expect_transactions(|txs| txs.len() == 2)
+            .expect_transactions(|txs| txs.len() == 2) // One for supply, one for borrow
+            .build();
+
+        let result = service.calculate_points_for_date(date).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_lending_position_closed_mid_day() {
+        // Scenario: User closes position halfway through the day
+        // 00:05-12:00 (11h55m = 42900s): $1000 supplied
+        // 12:00-24:00: $0 supplied (position closed, no points earned)
+        // Config: 10 points per USD per day
+        // Expected: Only earn for 00:05-12:00 = 1000×(10/86400)×42900 = 4,965 points
+
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let snapshot1 = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 5, 0).unwrap());
+        let snapshot2 = NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+
+        let snapshots = vec![
+            position_snapshot("user1", "market1", "1000", "0", snapshot1),
+            position_snapshot("user1", "market1", "0", "0", snapshot2), // Position closed
+        ];
+
+        let mut setup = TestSetup::new();
+        setup.points_repo.expect_get_points_config().returning(|| {
+            Ok(vec![
+                crate::models::PointsConfig {
+                    id: 1,
+                    action_type: "supply".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("10").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+                crate::models::PointsConfig {
+                    id: 2,
+                    action_type: "borrow".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("5").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+            ])
+        });
+
+        setup
+            .lending_repo
+            .expect_get_position_snapshots_in_period()
+            .returning(move |_, _| Ok(snapshots.clone()));
+
+        let service = setup
+            .with_no_swaps()
+            .with_no_multipliers()
+            .with_no_referrals()
+            .with_no_previous_snapshots()
+            .with_active_season(1)
+            .expect_snapshots(|snapshots| {
+                if let Some(s) = snapshots.iter().find(|s| s.address == "user1") {
+                    s.supply_points == 4965 && s.borrow_points == 0 && s.season_id == 1
+                } else {
+                    false
+                }
+            })
+            .expect_transactions(|_| true)
+            .build();
+
+        let result = service.calculate_points_for_date(date).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_lending_multiple_users() {
+        // Scenario: Two users with different positions
+        // User1: $1000 supplied from 00:05 until end of day (86100 seconds)
+        // User2: $500 borrowed from 00:05 until end of day (86100 seconds)
+        // Config: 10 points/USD/day supply, 5 points/USD/day borrow
+        // Expected: User1: 1000×(10/86400)×86100 = 9,965 supply points
+        //           User2: 500×(5/86400)×86100 = 2,491 borrow points
+
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let snapshot_time = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 5, 0).unwrap());
+
+        let snapshots = vec![
+            position_snapshot("user1", "market1", "1000", "0", snapshot_time),
+            position_snapshot("user2", "market1", "0", "500", snapshot_time),
+        ];
+
+        let mut setup = TestSetup::new();
+        setup.points_repo.expect_get_points_config().returning(|| {
+            Ok(vec![
+                crate::models::PointsConfig {
+                    id: 1,
+                    action_type: "supply".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("10").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+                crate::models::PointsConfig {
+                    id: 2,
+                    action_type: "borrow".to_string(),
+                    points_per_usd: None,
+                    points_per_usd_per_day: Some(BigDecimal::from_str("5").unwrap()),
+                    is_active: true,
+                    created_at: chrono::Utc::now().naive_utc(),
+                    updated_at: chrono::Utc::now().naive_utc(),
+                },
+            ])
+        });
+
+        setup
+            .lending_repo
+            .expect_get_position_snapshots_in_period()
+            .returning(move |_, _| Ok(snapshots.clone()));
+
+        let service = setup
+            .with_no_swaps()
+            .with_no_multipliers()
+            .with_no_referrals()
+            .with_no_previous_snapshots()
+            .with_active_season(1)
+            .expect_snapshots(|snapshots| {
+                let user1 = snapshots.iter().find(|s| s.address == "user1");
+                let user2 = snapshots.iter().find(|s| s.address == "user2");
+
+                if let (Some(u1), Some(u2)) = (user1, user2) {
+                    u1.supply_points == 9965
+                        && u1.borrow_points == 0
+                        && u2.supply_points == 0
+                        && u2.borrow_points == 2491
+                } else {
+                    false
+                }
+            })
+            .expect_transactions(|_| true)
             .build();
 
         let result = service.calculate_points_for_date(date).await;
