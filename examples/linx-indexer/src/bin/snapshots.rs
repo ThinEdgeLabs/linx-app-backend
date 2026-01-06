@@ -1,7 +1,7 @@
 use bento_cli::load_config;
 use bento_core::new_db_pool;
 use bento_types::network::Network;
-use linx_indexer::services::{DepositSnapshotService, MarketStateSnapshotService};
+use linx_indexer::services::{MarketStateSnapshotService, PositionSnapshotService};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,12 +22,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match (std::env::args().nth(1).as_deref(), std::env::args().nth(2).as_deref()) {
-        (Some("deposits"), Some("once")) => {
-            let snapshot_service = DepositSnapshotService::new(db_pool, network);
+        (Some("positions"), Some("once")) => {
+            let snapshot_service = PositionSnapshotService::new(db_pool, network);
             snapshot_service.generate_snapshots().await?;
         }
-        (Some("deposits"), Some("daemon")) => {
-            let snapshot_service = DepositSnapshotService::new(db_pool, network);
+        (Some("positions"), Some("daemon")) => {
+            let snapshot_service = PositionSnapshotService::new(db_pool, network);
             snapshot_service.run_scheduler().await?;
         }
         (Some("market-state"), Some("once")) => {
@@ -39,9 +39,9 @@ async fn main() -> anyhow::Result<()> {
             snapshot_service.run_scheduler().await?;
         }
         _ => {
-            println!("Usage: deposit_snapshots [deposits|market-state] [once|daemon]");
-            println!("  deposits once      - Generate deposit snapshots once");
-            println!("  deposits daemon    - Run deposit snapshot scheduler");
+            println!("Usage: snapshots [positions|market-state] [once|daemon]");
+            println!("  positions once     - Generate position snapshots once");
+            println!("  positions daemon   - Run position snapshot scheduler");
             println!("  market-state once  - Generate market state snapshots once");
             println!("  market-state daemon - Run market state snapshot scheduler");
         }

@@ -66,31 +66,35 @@ pub struct NewLendingEvent {
 }
 
 #[derive(Queryable, Insertable, Debug, Clone, Serialize, AsChangeset, ToSchema)]
-#[diesel(table_name = schema::lending_deposits_snapshots)]
+#[diesel(table_name = schema::lending_position_snapshots)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct DepositSnapshot {
+pub struct PositionSnapshot {
     pub id: i64,
     pub address: String,
     pub market_id: String,
     #[schema(value_type = String)]
-    pub amount: BigDecimal,
+    pub supply_amount: BigDecimal,
     #[schema(value_type = String)]
-    pub amount_usd: BigDecimal,
+    pub supply_amount_usd: BigDecimal,
     #[schema(value_type = String)]
     pub timestamp: NaiveDateTime,
     #[schema(value_type = String)]
-    pub created_at: NaiveDateTime,
+    pub borrow_amount: BigDecimal,
+    #[schema(value_type = String)]
+    pub borrow_amount_usd: BigDecimal,
 }
 
 #[derive(Insertable, Debug, Clone)]
-#[diesel(table_name = schema::lending_deposits_snapshots)]
+#[diesel(table_name = schema::lending_position_snapshots)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct NewDepositSnapshot {
+pub struct NewPositionSnapshot {
     pub address: String,
     pub market_id: String,
-    pub amount: BigDecimal,
-    pub amount_usd: BigDecimal,
+    pub supply_amount: BigDecimal,
+    pub supply_amount_usd: BigDecimal,
     pub timestamp: NaiveDateTime,
+    pub borrow_amount: BigDecimal,
+    pub borrow_amount_usd: BigDecimal,
 }
 
 #[derive(Serialize, ToSchema, Debug)]

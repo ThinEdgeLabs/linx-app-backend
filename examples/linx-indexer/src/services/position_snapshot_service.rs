@@ -1,6 +1,6 @@
 use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
-use crate::models::NewDepositSnapshot;
-use crate::services::price::oracle_price_service::{dia_token_pairs, OraclePriceService};
+use crate::models::NewPositionSnapshot;
+use crate::services::price::token_service::TokenService;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
 use bento_cli::load_config;
@@ -13,18 +13,17 @@ use bento_types::{
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;
 
-pub struct DepositSnapshotService {
+pub struct PositionSnapshotService {
     lending_repository: LendingRepository,
     client: Client,
-    price_service: OraclePriceService,
-    network: Network,
+    token_service: TokenService,
 }
 
-impl DepositSnapshotService {
+impl PositionSnapshotService {
     pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
         let client = Client::new(network.clone());
-        let price_service = OraclePriceService::new(network.clone());
-        Self { lending_repository: LendingRepository::new(db_pool), client, price_service, network }
+        let token_service = TokenService::new(network);
+        Self { lending_repository: LendingRepository::new(db_pool), client, token_service }
     }
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
@@ -43,45 +42,36 @@ impl DepositSnapshotService {
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap();
 
-        let token_pairs = dia_token_pairs(&self.network);
-        let mut oracle_prices: std::collections::HashMap<&str, BigDecimal> =
-            std::collections::HashMap::new();
-
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
-            tracing::info!("Calculating deposit snapshots for market {}", market.id);
+            tracing::info!("Calculating position snapshots for market {}", market.id);
 
-            // Get the oracle token pair key for the loan token
-            let key = match token_pairs.get(&market.loan_token.as_str()) {
-                Some(k) => *k,
-                None => {
-                    tracing::warn!(
-                        "No DIA token pair found for loan token {}, skipping market {}",
+            // Get token info for the loan token
+            let token_info = match self.token_service.get_token_info(&market.loan_token).await {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to get token info for token {} in market {}: {}",
                         market.loan_token,
-                        market.id
+                        market.id,
+                        e
                     );
                     continue;
                 }
             };
 
-            // Fetch the oracle price for the loan token and cache it
-            let loan_token_price = match oracle_prices.get(market.loan_token.as_str()) {
-                Some(p) => p.clone(),
-                None => match self.price_service.get_dia_value(key).await {
-                    Ok((p, _)) => {
-                        oracle_prices.insert(key, p.clone());
-                        p
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to fetch DIA price for token {} in market {}: {}",
-                            market.loan_token,
-                            market.id,
-                            e
-                        );
-                        continue;
-                    }
-                },
+            // Get token price (already normalized by token service)
+            let token_price = match self.token_service.get_token_price(&market.loan_token).await {
+                Ok(price) => price,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to get price for token {} in market {}: {}",
+                        market.loan_token,
+                        market.id,
+                        e
+                    );
+                    continue;
+                }
             };
 
             let market_state = match self
@@ -110,7 +100,9 @@ impl DepositSnapshotService {
                 let mut snapshots = Vec::new();
                 for position in positions {
                     tracing::debug!("Processing position for user {}", position.address);
-                    let amount = if position.supply_shares.is_zero() {
+
+                    // Calculate raw supply amount from shares using the protocol formula
+                    let raw_supply_amount = if position.supply_shares.is_zero() {
                         BigDecimal::from(0)
                     } else {
                         (position.supply_shares
@@ -118,24 +110,48 @@ impl DepositSnapshotService {
                             / (&market_state.total_supply_shares + VIRTUAL_SHARES))
                             .with_scale(0)
                     };
-                    tracing::debug!("Calculated amount for user {}: {}", position.address, amount);
-                    //TODO: Handle normalization factor for tokens with decimals
-                    // DIA price has 8 decimals
-                    // Loan token might have different decimals, need to adjust accordingly
-                    let amount_usd = &amount
-                        * oracle_prices
-                            .get(market.loan_token.as_str())
-                            .unwrap_or(&BigDecimal::zero());
-                    let deposit_snapshot = NewDepositSnapshot {
+
+                    // Calculate raw borrow amount from shares using the protocol formula
+                    let raw_borrow_amount = if position.borrow_shares.is_zero() {
+                        BigDecimal::from(0)
+                    } else {
+                        (position.borrow_shares
+                            * (&market_state.total_borrow_assets + VIRTUAL_ASSETS)
+                            / (&market_state.total_borrow_shares + VIRTUAL_SHARES))
+                            .with_scale(0)
+                    };
+
+                    // Normalize the amounts using token decimals
+                    let normalized_supply_amount =
+                        token_info.convert_to_decimal(&raw_supply_amount);
+                    let normalized_borrow_amount =
+                        token_info.convert_to_decimal(&raw_borrow_amount);
+
+                    // Calculate USD values (token_price is already normalized)
+                    let supply_amount_usd = &normalized_supply_amount * &token_price;
+                    let borrow_amount_usd = &normalized_borrow_amount * &token_price;
+
+                    tracing::debug!(
+                        "User {}: supply={} (${:.2}), borrow={} (${:.2})",
+                        position.address,
+                        normalized_supply_amount,
+                        supply_amount_usd,
+                        normalized_borrow_amount,
+                        borrow_amount_usd
+                    );
+
+                    let position_snapshot = NewPositionSnapshot {
                         address: position.address.clone(),
                         market_id: market.id.clone(),
-                        amount,
-                        amount_usd,
+                        supply_amount: raw_supply_amount,
+                        supply_amount_usd,
+                        borrow_amount: raw_borrow_amount,
+                        borrow_amount_usd,
                         timestamp: chrono::Utc::now().naive_utc(),
                     };
-                    snapshots.push(deposit_snapshot);
+                    snapshots.push(position_snapshot);
                 }
-                self.lending_repository.insert_deposit_snapshots(&snapshots).await?;
+                self.lending_repository.insert_position_snapshots(&snapshots).await?;
 
                 page += 1;
             }
@@ -240,11 +256,11 @@ impl DepositSnapshotService {
 
         loop {
             interval_timer.tick().await;
-            tracing::info!("Starting scheduled deposit snapshot generation...");
+            tracing::info!("Starting scheduled position snapshot generation...");
             if let Err(e) = self.generate_snapshots().await {
                 tracing::error!("Error during scheduled snapshot generation: {}", e);
             } else {
-                tracing::info!("Scheduled deposit snapshot generation completed successfully.");
+                tracing::info!("Scheduled position snapshot generation completed successfully.");
             }
         }
     }

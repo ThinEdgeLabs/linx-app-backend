@@ -11,8 +11,8 @@ use mockall::automock;
 
 use crate::{
     models::{
-        DepositSnapshot, LendingEvent, Market, NewDepositSnapshot, NewLendingEvent,
-        NewMarketStateSnapshot, Position,
+        LendingEvent, Market, NewLendingEvent, NewMarketStateSnapshot, NewPositionSnapshot,
+        Position, PositionSnapshot,
     },
     schema::{self},
 };
@@ -26,11 +26,11 @@ pub trait LendingRepositoryTrait {
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
     ) -> Result<Vec<LendingEvent>>;
-    async fn get_deposit_snapshots_in_period(
+    async fn get_position_snapshots_in_period(
         &self,
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
-    ) -> Result<Vec<DepositSnapshot>>;
+    ) -> Result<Vec<PositionSnapshot>>;
 }
 
 pub struct LendingRepository {
@@ -175,14 +175,14 @@ impl LendingRepository {
         }
     }
 
-    pub async fn insert_deposit_snapshots(&self, snapshots: &[NewDepositSnapshot]) -> Result<()> {
+    pub async fn insert_position_snapshots(&self, snapshots: &[NewPositionSnapshot]) -> Result<()> {
         if snapshots.is_empty() {
             return Ok(());
         }
 
         let mut conn = self.db_pool.get().await?;
 
-        diesel::insert_into(schema::lending_deposits_snapshots::table)
+        diesel::insert_into(schema::lending_position_snapshots::table)
             .values(snapshots)
             .on_conflict_do_nothing()
             .execute(&mut conn)
@@ -242,7 +242,7 @@ impl LendingRepository {
                 }
                 "Withdraw" => {
                     supply_shares -= &event.shares;
-                    if (&event.amount > &supplied_amount) {
+                    if event.amount > supplied_amount {
                         supplied_amount = BigDecimal::from(0);
                     } else {
                         supplied_amount -= &event.amount;
@@ -254,7 +254,7 @@ impl LendingRepository {
                 }
                 "Repay" => {
                     borrow_shares -= &event.shares;
-                    if (&event.amount > &borrowed_amount) {
+                    if event.amount > borrowed_amount {
                         borrowed_amount = BigDecimal::from(0);
                     } else {
                         borrowed_amount -= &event.amount;
@@ -356,17 +356,17 @@ impl LendingRepository {
         Ok(positions)
     }
 
-    pub async fn get_deposit_snapshots_in_period(
+    pub async fn get_position_snapshots_in_period(
         &self,
         start_time: chrono::NaiveDateTime,
         end_time: chrono::NaiveDateTime,
-    ) -> Result<Vec<crate::models::DepositSnapshot>> {
+    ) -> Result<Vec<crate::models::PositionSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
-        let snapshots: Vec<crate::models::DepositSnapshot> =
-            schema::lending_deposits_snapshots::table
-                .filter(schema::lending_deposits_snapshots::timestamp.ge(start_time))
-                .filter(schema::lending_deposits_snapshots::timestamp.lt(end_time))
+        let snapshots: Vec<crate::models::PositionSnapshot> =
+            schema::lending_position_snapshots::table
+                .filter(schema::lending_position_snapshots::timestamp.ge(start_time))
+                .filter(schema::lending_position_snapshots::timestamp.lt(end_time))
                 .load(&mut conn)
                 .await?;
 
@@ -401,11 +401,11 @@ impl LendingRepositoryTrait for LendingRepository {
         self.get_borrow_events_in_period(start_time, end_time).await
     }
 
-    async fn get_deposit_snapshots_in_period(
+    async fn get_position_snapshots_in_period(
         &self,
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
-    ) -> Result<Vec<DepositSnapshot>> {
-        self.get_deposit_snapshots_in_period(start_time, end_time).await
+    ) -> Result<Vec<PositionSnapshot>> {
+        self.get_position_snapshots_in_period(start_time, end_time).await
     }
 }

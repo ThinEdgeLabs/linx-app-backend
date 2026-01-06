@@ -52,18 +52,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    lending_deposits_snapshots (id) {
-        id -> Int8,
-        address -> Text,
-        market_id -> Text,
-        amount -> Numeric,
-        amount_usd -> Numeric,
-        timestamp -> Timestamp,
-        created_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     lending_events (id) {
         id -> Int8,
         market_id -> Text,
@@ -94,14 +82,15 @@ diesel::table! {
 }
 
 diesel::table! {
-    lending_positions (id) {
+    lending_position_snapshots (id) {
         id -> Int8,
-        market_id -> Text,
         address -> Text,
-        supply_shares -> Numeric,
-        borrow_shares -> Numeric,
-        collateral -> Numeric,
-        updated_at -> Timestamp,
+        market_id -> Text,
+        supply_amount -> Numeric,
+        supply_amount_usd -> Numeric,
+        timestamp -> Timestamp,
+        borrow_amount -> Numeric,
+        borrow_amount_usd -> Numeric,
     }
 }
 
@@ -301,10 +290,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     blocks,
     contract_calls,
     events,
-    lending_deposits_snapshots,
     lending_events,
     lending_markets,
-    lending_positions,
+    lending_position_snapshots,
     loan_actions,
     loan_details,
     market_state_snapshots,
