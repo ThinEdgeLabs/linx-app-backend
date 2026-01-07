@@ -38,6 +38,7 @@ pub struct UserPointsResponse {
     pub rank: i64,
     pub referral_code: String,
     pub referrals: i64,
+    pub has_applied_referral_code: bool,
 }
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
@@ -117,6 +118,10 @@ pub async fn get_user_points_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
 
+    // Check if user has applied a referral code
+    let user_referral = repo.get_user_referral(&address).await?;
+    let has_applied_referral_code = user_referral.is_some();
+
     // Get active season
     let active_season = repo
         .get_active_season()
@@ -140,11 +145,18 @@ pub async fn get_user_points_handler(
                 rank,
                 referral_code,
                 referrals,
+                has_applied_referral_code,
             }))
         }
         None => {
             let referral_code = repo.get_or_create_referral_code(&address).await?;
-            Ok(Json(UserPointsResponse { points: 0, rank: 0, referral_code, referrals: 0 }))
+            Ok(Json(UserPointsResponse {
+                points: 0,
+                rank: 0,
+                referral_code,
+                referrals: 0,
+                has_applied_referral_code,
+            }))
         }
     }
 }
