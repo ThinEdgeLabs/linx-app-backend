@@ -3,6 +3,10 @@
 # Default target
 .DEFAULT_GOAL := help
 
+# Extract version from Cargo.toml
+VERSION := $(shell grep '^version = ' examples/linx-indexer/Cargo.toml | head -n1 | cut -d'"' -f2)
+export VERSION
+
 # Load environment variables from .env file
 ifneq (,$(wildcard ./.env))
     include .env
@@ -11,8 +15,10 @@ endif
 
 # Build all Docker images
 build:
-	@echo "Building Docker images..."
-	docker compose -f docker-compose.prod.yml build
+	@echo "Building Docker images (version: $(VERSION))..."
+	docker compose -f docker-compose.prod.yml build cli
+	docker compose -f docker-compose.prod.yml build indexer api
+	@echo "Build completed (version: $(VERSION))."
 
 # Start all services
 start:
@@ -38,7 +44,7 @@ sql-cli:
 # Show help
 help:
 	@echo "Available commands:"
-	@echo "  make build  - Build all Docker images"
+	@echo "  make build  - Build all Docker images (version: $(VERSION))"
 	@echo "  make start  - Start all services (db, indexer, api, cli)"
 	@echo "  make stop   - Stop all services"
 	@echo "  make cli    - Access CLI container interactively"

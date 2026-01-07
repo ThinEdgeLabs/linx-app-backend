@@ -31,7 +31,7 @@ services:
       - "traefik.enable=false"
 
   indexer:
-    image: indexer:1.0.1
+    image: linx-app-backend/indexer:${VERSION:-1.0.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -50,7 +50,7 @@ services:
       - "traefik.enable=false"
 
   api:
-    image: api:1.0.1
+    image: linx-app-backend/api:${VERSION:-1.0.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -75,7 +75,7 @@ services:
       - "traefik.docker.network=traefik"
 
   cli:
-    image: cli:1.0.1
+    image: linx-app-backend/cli:${VERSION:-1.0.0}
     build:
       context: .
       dockerfile: Dockerfile.cli
