@@ -8,7 +8,7 @@ x-logging: &default-logging
 services:
   db:
     image: postgres:17
-    container_name: bento-alephium-db
+    container_name: linx-app-backend-db
     <<: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bento_user}
@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile
     container_name: bento-alephium-indexer
     <<: *default-logging
-    command: /app/bento run worker
+    command: /app/cli run worker
     depends_on:
       db:
         condition: service_healthy
@@ -56,7 +56,7 @@ services:
       dockerfile: Dockerfile
     container_name: bento-alephium-api
     <<: *default-logging
-    command: /app/bento run server
+    command: /app/cli run server
     depends_on:
       db:
         condition: service_healthy
@@ -67,12 +67,11 @@ services:
       - bento-network
       - traefik
     labels:
-      - "traefik.http.routers.bento-api.rule=Host(`api.linxlabs.org`) && PathPrefix(`/v1/account-transactions`) || Host(`bento-alephium.linxlabs.org`)"
-      - "traefik.http.routers.bento-api.entrypoints=websecure"
-      - "traefik.http.services.bento-api.loadbalancer.server.port=8080"
-      - "traefik.http.routers.bento-api.tls.certresolver=cfresolver"
-      - "traefik.http.routers.bento-api.service=bento-api"
-      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.linx-app-api.rule=Host(`api.linxlabs.org`) && (PathPrefix(`/history`) || PathPrefix(`/lending`) || PathPrefix(`/points`))"
+      - "traefik.http.routers.linx-app-api.entrypoints=websecure"
+      - "traefik.http.services.linx-app-api.loadbalancer.server.port=8080"
+      - "traefik.http.routers.linx-app-api.tls.certresolver=cfresolver"
+      - "traefik.http.routers.linx-app-api.service=linx-app-api"
 
   cli:
     image: linx-app-backend/cli:${VERSION:-1.0.0}
@@ -107,5 +106,5 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: /mnt/volume_bento_alephium_data/postgres-data/
+      device: /mnt/volume_linx_app_backend/postgres-data/
       o: bind
