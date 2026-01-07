@@ -1,0 +1,2 @@
+-- This migration cannot be reversed
+-- The points_transactions table and its data will be permanently removed

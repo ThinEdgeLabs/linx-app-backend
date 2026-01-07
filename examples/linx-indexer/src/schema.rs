@@ -189,20 +189,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    points_transactions (id) {
-        id -> Int4,
-        address -> Text,
-        action_type -> Text,
-        transaction_id -> Nullable<Text>,
-        amount_usd -> Numeric,
-        points_earned -> Int4,
-        created_at -> Timestamp,
-        snapshot_date -> Date,
-        season_id -> Int4,
-    }
-}
-
-diesel::table! {
     pools (id) {
         id -> Int8,
         address -> Text,
@@ -281,7 +267,6 @@ diesel::table! {
 
 diesel::joinable!(contract_calls -> account_transactions (account_transaction_id));
 diesel::joinable!(points_snapshots -> points_seasons (season_id));
-diesel::joinable!(points_transactions -> points_seasons (season_id));
 diesel::joinable!(swaps -> account_transactions (account_transaction_id));
 diesel::joinable!(transfers -> account_transactions (account_transaction_id));
 
@@ -300,7 +285,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     points_multipliers,
     points_seasons,
     points_snapshots,
-    points_transactions,
     pools,
     processor_status,
     referral_codes,

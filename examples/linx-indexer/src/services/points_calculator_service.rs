@@ -40,15 +40,6 @@ struct UserDailyActivity {
     borrow_volume_usd: BigDecimal,
     base_points_total: i32,
     total_volume_usd: BigDecimal,
-    transactions: Vec<TransactionDetail>,
-}
-
-#[derive(Debug, Clone)]
-struct TransactionDetail {
-    action_type: String,
-    transaction_id: Option<String>,
-    amount_usd: BigDecimal,
-    points_earned: i32,
 }
 
 impl UserDailyActivity {
@@ -63,7 +54,6 @@ impl UserDailyActivity {
             borrow_volume_usd: BigDecimal::zero(),
             base_points_total: 0,
             total_volume_usd: BigDecimal::zero(),
-            transactions: Vec::new(),
         }
     }
 
@@ -147,7 +137,6 @@ where
 
         // 7. Store results
         self.store_snapshots(date, active_season.id, &user_activities).await?;
-        self.store_transactions(date, active_season.id, &user_activities).await?;
 
         tracing::info!("Completed points calculation for date: {}", date);
         Ok(())
@@ -312,12 +301,6 @@ where
 
             activity.swap_points += points_earned;
             activity.swap_volume_usd += &amount_usd;
-            activity.transactions.push(TransactionDetail {
-                action_type: "swap".to_string(),
-                transaction_id: Some(swap_tx.swap.tx_id),
-                amount_usd,
-                points_earned,
-            });
         }
 
         Ok(())
@@ -455,24 +438,6 @@ where
                 }
             }
 
-            // Add aggregate transactions for the day (one for supply, one for borrow)
-            if activity.supply_points > 0 {
-                activity.transactions.push(TransactionDetail {
-                    action_type: "supply".to_string(),
-                    transaction_id: None,
-                    amount_usd: activity.supply_volume_usd.clone(),
-                    points_earned: activity.supply_points,
-                });
-            }
-
-            if activity.borrow_points > 0 {
-                activity.transactions.push(TransactionDetail {
-                    action_type: "borrow".to_string(),
-                    transaction_id: None,
-                    amount_usd: activity.borrow_volume_usd.clone(),
-                    points_earned: activity.borrow_points,
-                });
-            }
         }
 
         Ok(())
@@ -646,48 +611,6 @@ where
         );
         Ok(())
     }
-
-    /// Store transaction details in database
-    async fn store_transactions(
-        &self,
-        date: NaiveDate,
-        season_id: i32,
-        user_activities: &HashMap<String, UserDailyActivity>,
-    ) -> Result<()> {
-        use crate::models::NewPointsTransaction;
-
-        if user_activities.is_empty() {
-            tracing::info!("No user activities to store transactions for date {}", date);
-            return Ok(());
-        }
-
-        // Delete existing transactions for this date to allow recalculation
-        let deleted_count = self.points_repository.delete_transactions_by_date(date).await?;
-        if deleted_count > 0 {
-            tracing::info!("Deleted {} existing transactions for date {}", deleted_count, date);
-        }
-
-        let mut transactions = Vec::new();
-
-        for activity in user_activities.values() {
-            for tx_detail in &activity.transactions {
-                transactions.push(NewPointsTransaction {
-                    address: activity.address.clone(),
-                    action_type: tx_detail.action_type.clone(),
-                    transaction_id: tx_detail.transaction_id.clone(),
-                    amount_usd: tx_detail.amount_usd.clone(),
-                    points_earned: tx_detail.points_earned,
-                    snapshot_date: date,
-                    season_id,
-                });
-            }
-        }
-
-        self.points_repository.insert_transactions(&transactions).await?;
-
-        tracing::info!("Stored {} transaction details for date {}", transactions.len(), date);
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -765,17 +688,6 @@ mod tests {
             F: Fn(&[crate::models::NewPointsSnapshot]) -> bool + Send + 'static,
         {
             self.points_repo.expect_insert_snapshots().withf(validator).returning(|_| Ok(()));
-            self
-        }
-
-        fn expect_transactions<F>(mut self, validator: F) -> Self
-        where
-            F: Fn(&[crate::models::NewPointsTransaction]) -> bool + Send + 'static,
-        {
-            // Mock delete_transactions_by_date - allow it to be called
-            self.points_repo.expect_delete_transactions_by_date().returning(|_| Ok(0));
-
-            self.points_repo.expect_insert_transactions().withf(validator).returning(|_| Ok(()));
             self
         }
 
@@ -878,7 +790,6 @@ mod tests {
                     false
                 }
             })
-            .expect_transactions(|txs| txs.len() == 1 && txs[0].action_type == "supply")
             .build();
 
         let result = service.calculate_points_for_date(date).await;
@@ -948,7 +859,6 @@ mod tests {
                     false
                 }
             })
-            .expect_transactions(|_| true)
             .build();
 
         let result = service.calculate_points_for_date(date).await;
@@ -1013,7 +923,6 @@ mod tests {
                     false
                 }
             })
-            .expect_transactions(|txs| txs.len() == 2) // One for supply, one for borrow
             .build();
 
         let result = service.calculate_points_for_date(date).await;
@@ -1079,7 +988,6 @@ mod tests {
                     false
                 }
             })
-            .expect_transactions(|_| true)
             .build();
 
         let result = service.calculate_points_for_date(date).await;
@@ -1151,7 +1059,6 @@ mod tests {
                     false
                 }
             })
-            .expect_transactions(|_| true)
             .build();
 
         let result = service.calculate_points_for_date(date).await;

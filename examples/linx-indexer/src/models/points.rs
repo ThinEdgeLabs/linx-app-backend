@@ -173,34 +173,3 @@ pub struct NewPointsSnapshot {
     pub season_id: i32,
 }
 
-// ==================== Points Transactions ====================
-
-#[derive(Queryable, Insertable, Debug, Clone, Serialize, AsChangeset, ToSchema)]
-#[diesel(table_name = schema::points_transactions)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct PointsTransaction {
-    pub id: i32,
-    pub address: String,
-    pub action_type: String,
-    pub transaction_id: Option<String>,
-    #[schema(value_type = String)]
-    pub amount_usd: BigDecimal,
-    pub points_earned: i32,
-    #[schema(value_type = String)]
-    pub created_at: NaiveDateTime,
-    #[schema(value_type = String)]
-    pub snapshot_date: NaiveDate,
-    pub season_id: i32,
-}
-
-#[derive(Insertable, Debug, Clone)]
-#[diesel(table_name = schema::points_transactions)]
-pub struct NewPointsTransaction {
-    pub address: String,
-    pub action_type: String,
-    pub transaction_id: Option<String>,
-    pub amount_usd: BigDecimal,
-    pub points_earned: i32,
-    pub snapshot_date: NaiveDate,
-    pub season_id: i32,
-}

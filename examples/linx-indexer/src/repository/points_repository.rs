@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_types::DbPool;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDate;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
 use diesel_async::RunQueryDsl;
 #[cfg(test)]
@@ -12,9 +12,9 @@ use rand::distr::{Alphanumeric, SampleString};
 
 use crate::{
     models::{
-        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewPointsTransaction,
+        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot,
         NewReferralCode, NewSeason, NewUserReferral, PointsConfig, PointsMultiplier,
-        PointsSnapshot, PointsTransaction, ReferralCode, Season, UserReferral,
+        PointsSnapshot, ReferralCode, Season, UserReferral,
     },
     schema,
 };
@@ -112,30 +112,6 @@ pub trait PointsRepositoryTrait {
 
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
-    async fn get_user_transactions(
-        &self,
-        address: &str,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<PointsTransaction>>;
-    async fn get_transactions_by_action(
-        &self,
-        action_type: &str,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<PointsTransaction>>;
-    async fn get_transactions_in_period(
-        &self,
-        address: &str,
-        start_time: NaiveDateTime,
-        end_time: NaiveDateTime,
-    ) -> Result<Vec<PointsTransaction>>;
-    async fn insert_transactions(&self, transactions: &[NewPointsTransaction]) -> Result<()>;
-    async fn insert_transaction(
-        &self,
-        transaction: NewPointsTransaction,
-    ) -> Result<PointsTransaction>;
-    async fn delete_transactions_by_date(&self, snapshot_date: NaiveDate) -> Result<u64>;
 }
 
 pub struct PointsRepository {
@@ -653,106 +629,6 @@ impl PointsRepositoryTrait for PointsRepository {
                 .await?;
 
         Ok(upserted_snapshot)
-    }
-
-    // ==================== Points Transactions ====================
-
-    async fn get_user_transactions(
-        &self,
-        address: &str,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<PointsTransaction>> {
-        let mut conn = self.db_pool.get().await?;
-
-        let transactions: Vec<PointsTransaction> = schema::points_transactions::table
-            .filter(schema::points_transactions::address.eq(address))
-            .order(schema::points_transactions::created_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-            .load(&mut conn)
-            .await?;
-
-        Ok(transactions)
-    }
-
-    async fn get_transactions_by_action(
-        &self,
-        action_type: &str,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<PointsTransaction>> {
-        let mut conn = self.db_pool.get().await?;
-
-        let transactions: Vec<PointsTransaction> = schema::points_transactions::table
-            .filter(schema::points_transactions::action_type.eq(action_type))
-            .order(schema::points_transactions::created_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-            .load(&mut conn)
-            .await?;
-
-        Ok(transactions)
-    }
-
-    async fn get_transactions_in_period(
-        &self,
-        address: &str,
-        start_time: NaiveDateTime,
-        end_time: NaiveDateTime,
-    ) -> Result<Vec<PointsTransaction>> {
-        let mut conn = self.db_pool.get().await?;
-
-        let transactions: Vec<PointsTransaction> = schema::points_transactions::table
-            .filter(schema::points_transactions::address.eq(address))
-            .filter(schema::points_transactions::created_at.ge(start_time))
-            .filter(schema::points_transactions::created_at.lt(end_time))
-            .order(schema::points_transactions::created_at.asc())
-            .load(&mut conn)
-            .await?;
-
-        Ok(transactions)
-    }
-
-    async fn insert_transactions(&self, transactions: &[NewPointsTransaction]) -> Result<()> {
-        if transactions.is_empty() {
-            return Ok(());
-        }
-
-        let mut conn = self.db_pool.get().await?;
-
-        diesel::insert_into(schema::points_transactions::table)
-            .values(transactions)
-            .execute(&mut conn)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn insert_transaction(
-        &self,
-        transaction: NewPointsTransaction,
-    ) -> Result<PointsTransaction> {
-        let mut conn = self.db_pool.get().await?;
-
-        let inserted_transaction: PointsTransaction =
-            diesel::insert_into(schema::points_transactions::table)
-                .values(&transaction)
-                .get_result(&mut conn)
-                .await?;
-
-        Ok(inserted_transaction)
-    }
-
-    async fn delete_transactions_by_date(&self, snapshot_date: NaiveDate) -> Result<u64> {
-        let mut conn = self.db_pool.get().await?;
-
-        let deleted_count = diesel::delete(schema::points_transactions::table)
-            .filter(schema::points_transactions::snapshot_date.eq(snapshot_date))
-            .execute(&mut conn)
-            .await?;
-
-        Ok(deleted_count as u64)
     }
 }
 
