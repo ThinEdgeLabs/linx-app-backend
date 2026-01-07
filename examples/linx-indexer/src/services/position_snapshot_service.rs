@@ -165,7 +165,7 @@ impl PositionSnapshotService {
         linx_address: &str,
         linx_group: u32,
     ) -> anyhow::Result<MarketState> {
-        let method_index = 5;
+        let method_index = 4;
         let tx_id = random_tx_id();
         let params = CallContractParams {
             tx_id: Some(tx_id.clone()),
@@ -198,9 +198,10 @@ impl PositionSnapshotService {
                 })?;
                 if returns.len() != 6 {
                     anyhow::bail!(
-                        "Expected 6 return values for market {}, got {}",
+                        "Expected 6 return values for market {}, got {}, values: {}",
                         market_id,
-                        returns.len()
+                        returns.len(),
+                        serde_json::to_string(&returns).unwrap_or_default(),
                     );
                 }
                 let total_supply_assets =
