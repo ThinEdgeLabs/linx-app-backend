@@ -142,7 +142,10 @@ pub async fn get_user_points_handler(
                 referrals,
             }))
         }
-        None => Err(AppError::NotFound(format!("No points found for address {}", address))),
+        None => {
+            let referral_code = repo.get_or_create_referral_code(&address).await?;
+            Ok(Json(UserPointsResponse { points: 0, rank: 0, referral_code, referrals: 0 }))
+        }
     }
 }
 
