@@ -244,7 +244,7 @@ pub async fn apply_referral_handler(
 
     // Check that user is not using their own referral code
     if referral_code.owner_address.to_lowercase() == request.user_address.to_lowercase() {
-        return Err(AppError::BadRequest("User has already used a referral code".to_string()));
+        return Err(AppError::BadRequest("Cannot use your own referral code".to_string()));
     }
 
     // Create the user referral entry
