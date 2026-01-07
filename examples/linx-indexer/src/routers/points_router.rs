@@ -233,10 +233,7 @@ pub async fn apply_referral_handler(
 
     // Check if user already has a referral
     if let Some(_existing) = repo.get_user_referral(&request.user_address).await? {
-        return Ok(Json(ApplyReferralResponse {
-            success: false,
-            message: "User has already used a referral code".to_string(),
-        }));
+        return Err(AppError::BadRequest("User has already used a referral code".to_string()));
     }
 
     // Get the referral code details
@@ -247,10 +244,7 @@ pub async fn apply_referral_handler(
 
     // Check that user is not using their own referral code
     if referral_code.owner_address.to_lowercase() == request.user_address.to_lowercase() {
-        return Ok(Json(ApplyReferralResponse {
-            success: false,
-            message: "Cannot use your own referral code".to_string(),
-        }));
+        return Err(AppError::BadRequest("User has already used a referral code".to_string()));
     }
 
     // Create the user referral entry
