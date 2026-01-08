@@ -69,9 +69,9 @@ impl std::fmt::Display for NetworkType {
 
 impl Default for Network {
     fn default() -> Self {
-        env::var("ENVIRONMENT")
+        env::var("NETWORK")
             .map(|env| match env.as_str() {
-                "development" => Network::Devnet,
+                "devnet" => Network::Devnet,
                 "testnet" => Network::Testnet,
                 "mainnet" => Network::Mainnet,
                 _ => Network::Mainnet,
@@ -122,7 +122,7 @@ mod network_tests {
         env::remove_var("DEV_NODE_URL");
         env::remove_var("TESTNET_NODE_URL");
         env::remove_var("MAINNET_NODE_URL");
-        env::remove_var("ENVIRONMENT");
+        env::remove_var("NETWORK");
     }
 
     #[test]
@@ -183,43 +183,43 @@ mod network_tests {
     fn test_network_default() {
         cleanup_env_vars();
 
-        // Test default when ENVIRONMENT is not set
+        // Test default when NETWORK is not set
         let default_network = Network::default();
         match default_network {
             Network::Mainnet => (),
-            _ => panic!("Default should be Mainnet when ENVIRONMENT is not set"),
+            _ => panic!("Default should be Mainnet when NETWORK is not set"),
         }
 
-        // Test with ENVIRONMENT set to development
-        env::set_var("ENVIRONMENT", "development");
+        // Test with NETWORK set to devnet
+        env::set_var("NETWORK", "devnet");
         let dev_network = Network::default();
         match dev_network {
             Network::Devnet => (),
-            _ => panic!("Should be Devnet when ENVIRONMENT is set to development"),
+            _ => panic!("Should be Devnet when NETWORK is set to devnet"),
         }
 
-        // Test with ENVIRONMENT set to testnet
-        env::set_var("ENVIRONMENT", "testnet");
+        // Test with NETWORK set to testnet
+        env::set_var("NETWORK", "testnet");
         let test_network = Network::default();
         match test_network {
             Network::Testnet => (),
-            _ => panic!("Should be Testnet when ENVIRONMENT is set to testnet"),
+            _ => panic!("Should be Testnet when NETWORK is set to testnet"),
         }
 
-        // Test with ENVIRONMENT set to mainnet
-        env::set_var("ENVIRONMENT", "mainnet");
+        // Test with NETWORK set to mainnet
+        env::set_var("NETWORK", "mainnet");
         let main_network = Network::default();
         match main_network {
             Network::Mainnet => (),
-            _ => panic!("Should be Mainnet when ENVIRONMENT is set to mainnet"),
+            _ => panic!("Should be Mainnet when NETWORK is set to mainnet"),
         }
 
-        // Test with ENVIRONMENT set to something else
-        env::set_var("ENVIRONMENT", "unknown");
+        // Test with NETWORK set to something else
+        env::set_var("NETWORK", "unknown");
         let unknown_network = Network::default();
         match unknown_network {
             Network::Mainnet => (),
-            _ => panic!("Should default to Mainnet for unknown environment"),
+            _ => panic!("Should default to Mainnet for unknown network"),
         }
 
         cleanup_env_vars();

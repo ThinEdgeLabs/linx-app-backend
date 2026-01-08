@@ -1,7 +1,6 @@
-use bento_cli::load_config;
+use bento_cli::{get_database_url, get_network, load_config};
 use bento_core::new_db_pool;
 use bento_core::workers::worker::{BackfillOptions, SyncOptions, Worker};
-use bento_types::network::Network;
 use linx_indexer::{get_processor_factories, services::GapDetectionService};
 
 #[tokio::main]
@@ -14,7 +13,8 @@ async fn main() -> anyhow::Result<()> {
     let config_path = "config.toml";
     let config = load_config(config_path).expect("Failed to load config");
 
-    let db_pool = new_db_pool(&config.worker.database_url, None).await?;
+    let database_url = get_database_url().expect("DATABASE_URL must be set in environment");
+    let db_pool = new_db_pool(&database_url, None).await?;
 
     let gap_service = GapDetectionService::new(db_pool.clone());
 
@@ -70,11 +70,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Running gap backfill");
 
             // Create network
-            let network: Network = if let Some(rpc_url) = &config.worker.rpc_url {
-                Network::Custom(rpc_url.to_string(), config.worker.network.clone().into())
-            } else {
-                config.worker.network.clone().into()
-            };
+            let network = get_network().expect("NETWORK must be set in environment");
 
             // Get processor factories from shared function
             let processor_factories = get_processor_factories();
@@ -106,9 +102,10 @@ async fn main() -> anyhow::Result<()> {
             );
 
             // Create worker
+            let database_url = get_database_url().expect("DATABASE_URL must be set in environment");
             let worker = Worker::new(
                 processor_configs,
-                config.worker.database_url.clone(),
+                database_url,
                 network,
                 None,
                 Some(SyncOptions::default()),

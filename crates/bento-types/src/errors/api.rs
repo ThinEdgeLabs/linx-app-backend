@@ -64,12 +64,12 @@ impl IntoResponse for AppError {
             AppError::ValidationError(msg) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, format!("Validation error: {}", msg))
             }
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, format!("{}", msg)),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.to_string()),
             AppError::Unauthorized(msg) => {
                 (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg))
             }
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, format!("{}", msg)),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, format!("{}", msg)),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.to_string()),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
         };
 
         // Create a JSON response with error details

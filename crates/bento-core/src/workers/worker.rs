@@ -191,8 +191,8 @@ impl Worker {
     ///
     /// # Arguments
     /// * `height` - The block height to sync
-    /// * `chains_to_sync` - Optional list of specific (chain_from, chain_to) pairs to fetch.
-    ///                      If None, fetches from all 16 chains.
+    /// * `chains_to_sync` - Optional list of specific (chain_from, chain_to) pairs to fetch. If None, fetches from all 16 chains.
+    ///
     pub async fn sync_at_height(
         &self,
         height: u64,
@@ -208,19 +208,17 @@ impl Worker {
         let block_hash_futures: Vec<_> = groups
             .iter()
             .map(|(from_group, to_group)| {
-                let height = height;
                 let from = *from_group;
                 let to = *to_group;
                 async move {
-                    self.client
-                        .get_block_hash_by_height(height, from, to)
-                        .await
-                        .with_context(|| {
+                    self.client.get_block_hash_by_height(height, from, to).await.with_context(
+                        || {
                             format!(
                                 "Failed to fetch block hash for height {} on chain ({}, {})",
                                 height, from, to
                             )
-                        })
+                        },
+                    )
                 }
             })
             .collect();
@@ -242,15 +240,12 @@ impl Worker {
             .map(|(idx, hashes)| {
                 let hash = hashes[0].clone();
                 async move {
-                    self.client
-                        .get_block_and_events_by_hash(&hash)
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "Failed to fetch block and events for hash {} (chain index {})",
-                                hash, idx
-                            )
-                        })
+                    self.client.get_block_and_events_by_hash(&hash).await.with_context(|| {
+                        format!(
+                            "Failed to fetch block and events for hash {} (chain index {})",
+                            hash, idx
+                        )
+                    })
                 }
             })
             .collect();
@@ -263,12 +258,11 @@ impl Worker {
 
         tracing::info!("Fetched {} blocks at height {}", blocks.len(), height);
 
-        self.run_pipeline(vec![BlockBatch {
-            blocks,
-            range: BlockRange { from_ts: 0, to_ts: 0 },
-        }])
-        .await
-        .with_context(|| format!("Failed to process blocks at height {} through pipeline", height))?;
+        self.run_pipeline(vec![BlockBatch { blocks, range: BlockRange { from_ts: 0, to_ts: 0 } }])
+            .await
+            .with_context(|| {
+                format!("Failed to process blocks at height {} through pipeline", height)
+            })?;
 
         Ok(())
     }

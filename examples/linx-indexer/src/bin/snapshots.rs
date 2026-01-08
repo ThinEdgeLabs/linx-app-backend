@@ -1,6 +1,5 @@
-use bento_cli::load_config;
+use bento_cli::{get_database_url, get_network};
 use bento_core::new_db_pool;
-use bento_types::network::Network;
 use linx_indexer::services::{MarketStateSnapshotService, PositionSnapshotService};
 
 #[tokio::main]
@@ -9,17 +8,10 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let config_path = "config.toml";
-    let config = load_config(config_path).expect("Failed to load config");
+    let database_url = get_database_url().expect("DATABASE_URL must be set in environment");
+    let db_pool = new_db_pool(&database_url, None).await?;
 
-    let db_pool = new_db_pool(&config.worker.database_url, None).await?;
-
-    let network: Network;
-    if let Some(rpc_url) = &config.worker.rpc_url {
-        network = Network::Custom(rpc_url.to_string(), config.worker.network.clone().into());
-    } else {
-        network = config.worker.network.clone().into();
-    }
+    let network = get_network().expect("NETWORK must be set in environment");
 
     match (std::env::args().nth(1).as_deref(), std::env::args().nth(2).as_deref()) {
         (Some("positions"), Some("once")) => {

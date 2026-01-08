@@ -214,7 +214,7 @@ impl LendingRepository {
         Ok(())
     }
 
-    /// Private helper methods
+    /******* Private helper methods *******/
 
     async fn calculate_user_position(
         &self,

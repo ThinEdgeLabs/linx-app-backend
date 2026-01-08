@@ -61,25 +61,13 @@ pub struct BackfillArgs {
 
 impl From<CliArgs> for Config {
     fn from(args: CliArgs) -> Self {
-        let mut config = load_config(&args.config_path).expect("Failed to load config");
-
-        if args.network.is_some() {
-            config.worker.network = args.network.clone().unwrap();
-        }
-
-        config
+        load_config(&args.config_path).expect("Failed to load config")
     }
 }
 
 impl From<BackfillArgs> for Config {
     fn from(args: BackfillArgs) -> Self {
-        let mut config = load_config(&args.config_path).expect("Failed to load config");
-
-        if args.network.is_some() {
-            config.worker.network = args.network.clone().unwrap();
-        }
-
-        config
+        load_config(&args.config_path).expect("Failed to load config")
     }
 }
 
@@ -95,18 +83,13 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WorkerConfig {
-    pub database_url: String,
-    pub rpc_url: Option<String>,
-    pub network: String,
     pub request_interval: u64,
     pub step: u64,
     pub backstep: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ServerConfig {
-    pub port: String,
-}
+pub struct ServerConfig {}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BackfillConfig {

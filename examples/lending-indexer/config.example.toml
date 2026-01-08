@@ -1,7 +1,4 @@
 [worker]
-database_url = "postgresql://postgres:123456789@localhost:5432/bento_alephium"
-# rpc_url = "https://example.com/rpc" # Optional, if not provided, the default RPC URL will be used
-network = "testnet"
 start = 1716560632750
 step = 18000000
 request_interval = 1000

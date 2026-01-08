@@ -16,6 +16,50 @@ use bento_server::{start, AppState, Config as ServerConfig};
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 use utoipa_axum::router::OpenApiRouter;
 
+/// Get database URL constructed from POSTGRES_* environment variables
+pub fn get_database_url() -> Result<String> {
+    let user = std::env::var("POSTGRES_USER").context(
+        "POSTGRES_USER environment variable not set. \
+        Please set POSTGRES_USER in .env file"
+    )?;
+
+    let password = std::env::var("POSTGRES_PASSWORD").context(
+        "POSTGRES_PASSWORD environment variable not set. \
+        Please set POSTGRES_PASSWORD in .env file"
+    )?;
+
+    let db = std::env::var("POSTGRES_DB").context(
+        "POSTGRES_DB environment variable not set. \
+        Please set POSTGRES_DB in .env file"
+    )?;
+
+    let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
+
+    Ok(format!(
+        "postgresql://{}:{}@{}:{}/{}",
+        user, password, host, port, db
+    ))
+}
+
+/// Get network from NETWORK environment variable (testnet, mainnet, or devnet)
+pub fn get_network() -> Result<Network> {
+    let network_str = std::env::var("NETWORK").context(
+        "NETWORK environment variable not set. \
+        Please set NETWORK in .env file or environment. \
+        Example: export NETWORK='testnet'"
+    )?;
+
+    // Check for optional RPC_URL
+    let rpc_url = std::env::var("RPC_URL").ok();
+
+    if let Some(url) = rpc_url {
+        Ok(Network::Custom(url, network_str.into()))
+    } else {
+        Ok(network_str.into())
+    }
+}
+
 async fn new_worker_from_config(
     config: &Config,
     processor_factories: &HashMap<String, ProcessorFactory>,
@@ -24,8 +68,6 @@ async fn new_worker_from_config(
     sync_options: Option<SyncOptions>,
     backfill_options: Option<BackfillOptions>,
 ) -> Result<Worker> {
-    let worker_config = &config.worker;
-
     let mut processors = Vec::new();
 
     if include_default_processors {
@@ -50,16 +92,11 @@ async fn new_worker_from_config(
         processors.push(processor_config);
     }
 
-    let network: Network;
-    if let Some(rpc_url) = &worker_config.rpc_url {
-        network = Network::Custom(rpc_url.to_string(), worker_config.network.clone().into());
-    } else {
-        network = worker_config.network.clone().into();
-    }
+    let network = get_network()?;
 
     let worker = Worker::new(
         processors,
-        worker_config.database_url.clone(),
+        get_database_url()?,
         network,
         None,
         sync_options,
@@ -114,23 +151,24 @@ pub async fn new_backfill_worker_from_config(
     .await
 }
 
-pub async fn new_server_config_from_config(config: &Config) -> Result<ServerConfig> {
-    let db_pool = new_db_pool(&config.worker.database_url, None).await?;
+pub async fn new_server_config_from_config(_config: &Config) -> Result<ServerConfig> {
+    let database_url = get_database_url()?;
+    let db_pool = new_db_pool(&database_url, None).await?;
 
-    let network: Network;
-    if let Some(rpc_url) = &config.worker.rpc_url {
-        network = Network::Custom(rpc_url.to_string(), config.worker.network.clone().into());
-    } else {
-        network = config.worker.network.clone().into();
-    }
-
+    let network = get_network()?;
     let client = Arc::new(Client::new(network));
+
+    let api_host = std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let api_port = std::env::var("API_PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse()
+        .context("Invalid API_PORT value")?;
 
     let server_config = ServerConfig {
         db_client: db_pool,
         node_client: client,
-        api_host: String::from("0.0.0.0"),
-        api_port: config.server.port.parse()?,
+        api_host,
+        api_port,
     };
     Ok(server_config)
 }
@@ -250,14 +288,11 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temp directory");
         let config_content = r#"
             [worker]
-            database_url = "postgres://user:password@localhost:5432/db"
-            network = "testnet"
             request_interval = 500
             step = 60000
             backstep = 300000
 
             [server]
-            port = "8080"
 
             [backfill]
             request_interval = 1000
@@ -281,15 +316,11 @@ mod tests {
         let config: Config = args.clone().into();
 
         // Verify the config was loaded correctly
-        assert_eq!(config.worker.database_url, "postgres://user:password@localhost:5432/db");
-        assert_eq!(config.worker.network, "testnet");
         assert_eq!(config.worker.request_interval, 500);
 
         assert_eq!(config.backfill.step, 1800000);
         assert_eq!(config.backfill.request_interval, 1000);
         assert_eq!(config.backfill.workers, 2);
-
-        assert_eq!(config.server.port, "8080");
 
         // Check that the processors were loaded
         assert!(config.processors.is_some());
@@ -309,5 +340,36 @@ mod tests {
         };
 
         let _: Config = args.clone().into();
+    }
+
+    #[test]
+    fn test_get_database_url() {
+        // Test with all POSTGRES_* variables set
+        std::env::set_var("POSTGRES_USER", "testuser");
+        std::env::set_var("POSTGRES_PASSWORD", "testpass");
+        std::env::set_var("POSTGRES_DB", "testdb");
+        std::env::set_var("POSTGRES_HOST", "testhost");
+        std::env::set_var("POSTGRES_PORT", "5433");
+
+        let result = get_database_url();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "postgresql://testuser:testpass@testhost:5433/testdb");
+
+        // Test with defaults (no HOST/PORT set)
+        std::env::remove_var("POSTGRES_HOST");
+        std::env::remove_var("POSTGRES_PORT");
+        let result = get_database_url();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "postgresql://testuser:testpass@localhost:5432/testdb");
+
+        // Test without required variables
+        std::env::remove_var("POSTGRES_USER");
+        let result = get_database_url();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("POSTGRES_USER"));
+
+        // Cleanup
+        std::env::remove_var("POSTGRES_PASSWORD");
+        std::env::remove_var("POSTGRES_DB");
     }
 }
