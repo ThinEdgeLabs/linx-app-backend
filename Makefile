@@ -16,25 +16,25 @@ endif
 # Build all Docker images
 build:
 	@echo "Building Docker images (version: $(VERSION))..."
-	docker compose -f docker-compose.prod.yml build cli
-	docker compose -f docker-compose.prod.yml build indexer api
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build cli
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build indexer api
 	@echo "Build completed (version: $(VERSION))."
 
 # Start all services
 start:
-	@echo "Starting services..."
-	docker compose -f docker-compose.prod.yml up -d
+	@echo "Starting services (version: $(VERSION))..."
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml up -d
 	@echo "Services started."
 
 # Stop all services
 stop:
 	@echo "Stopping services..."
-	docker compose -f docker-compose.prod.yml down
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml down
 
 # Access CLI container
 cli:
 	@echo "Connecting to CLI container..."
-	docker compose -f docker-compose.prod.yml exec cli bash
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml exec cli bash
 
 # Connect to PostgreSQL database
 sql-cli:
