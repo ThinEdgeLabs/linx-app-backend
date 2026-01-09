@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bento_types::DbPool;
 use chrono::NaiveDate;
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName};
 use diesel_async::RunQueryDsl;
 #[cfg(test)]
 use mockall::automock;
@@ -60,6 +60,20 @@ pub trait PointsRepositoryTrait {
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral>;
 
     async fn count_referrals_by_address(&self, referred_by_address: &str) -> Result<i64>;
+
+    async fn get_referral_summary(
+        &self,
+        referrer_address: &str,
+        season_id: i32,
+    ) -> Result<crate::models::ReferralSummary>;
+
+    async fn get_referral_details_paginated(
+        &self,
+        referrer_address: &str,
+        season_id: i32,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<crate::models::ReferralDetail>>;
 
     // ==================== Seasons ====================
 
@@ -368,6 +382,125 @@ impl PointsRepositoryTrait for PointsRepository {
             .await?;
 
         Ok(count)
+    }
+
+    async fn get_referral_summary(
+        &self,
+        referrer_address: &str,
+        season_id: i32,
+    ) -> Result<crate::models::ReferralSummary> {
+        use crate::schema::user_referrals::dsl;
+        use diesel::sql_types::{Integer, Text};
+
+        // TODO: Make referral percentage configurable (currently hardcoded to match config: 5%)
+        const REFERRAL_PERCENTAGE: f64 = 0.05;
+
+        let mut conn = self.db_pool.get().await?;
+
+        // Count total referrals
+        let total_referrals: i64 = dsl::user_referrals
+            .filter(dsl::referred_by_address.eq(referrer_address))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+
+        // Calculate total bonus points using raw SQL for complex query
+        #[derive(QueryableByName, Debug)]
+        struct BonusSum {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            total_points_sum: i64,
+        }
+
+        let query = diesel::sql_query(
+            r#"
+            SELECT COALESCE(SUM(ps.total_points), 0) as total_points_sum
+            FROM user_referrals ur
+            LEFT JOIN (
+                SELECT DISTINCT ON (address) address, total_points, snapshot_date
+                FROM points_snapshots
+                WHERE season_id = $1
+                ORDER BY address, snapshot_date DESC
+            ) ps ON ur.user_address = ps.address
+            WHERE ur.referred_by_address = $2
+            "#,
+        )
+        .bind::<Integer, _>(season_id)
+        .bind::<Text, _>(referrer_address);
+
+        let result: BonusSum = query.get_result(&mut conn).await?;
+
+        // Calculate bonus points as percentage of total referred points
+        let total_bonus_points = (result.total_points_sum as f64 * REFERRAL_PERCENTAGE) as i32;
+
+        Ok(crate::models::ReferralSummary { total_referrals, total_bonus_points })
+    }
+
+    async fn get_referral_details_paginated(
+        &self,
+        referrer_address: &str,
+        season_id: i32,
+        page: i64,
+        limit: i64,
+    ) -> Result<Vec<crate::models::ReferralDetail>> {
+        use diesel::sql_types::{BigInt, Integer, Text};
+
+        // TODO: Make referral percentage configurable (currently hardcoded to match config: 5%)
+        const REFERRAL_PERCENTAGE: f64 = 0.05;
+
+        let mut conn = self.db_pool.get().await?;
+
+        let offset = page * limit;
+
+        // Use raw SQL query with DISTINCT ON for latest snapshot per user
+        #[derive(QueryableByName, Debug)]
+        struct ReferralRow {
+            #[diesel(sql_type = diesel::sql_types::Text)]
+            user_address: String,
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+            total_points: Option<i32>,
+        }
+
+        let query = diesel::sql_query(
+            r#"
+            SELECT
+                ur.user_address,
+                ps.total_points
+            FROM user_referrals ur
+            LEFT JOIN (
+                SELECT DISTINCT ON (address) address, total_points, snapshot_date
+                FROM points_snapshots
+                WHERE season_id = $1
+                ORDER BY address, snapshot_date DESC
+            ) ps ON ur.user_address = ps.address
+            WHERE ur.referred_by_address = $2
+            ORDER BY COALESCE(ps.total_points, 0) DESC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind::<Integer, _>(season_id)
+        .bind::<Text, _>(referrer_address)
+        .bind::<BigInt, _>(limit)
+        .bind::<BigInt, _>(offset);
+
+        let rows: Vec<ReferralRow> = query.load(&mut conn).await?;
+
+        // Convert rows to ReferralDetail structs
+        let details = rows
+            .into_iter()
+            .map(|row| {
+                let referred_user_total_points = row.total_points.unwrap_or(0);
+                let bonus_points_earned =
+                    (referred_user_total_points as f64 * REFERRAL_PERCENTAGE) as i32;
+
+                crate::models::ReferralDetail {
+                    referred_user_address: row.user_address,
+                    bonus_points_earned,
+                    referred_user_total_points,
+                }
+            })
+            .collect();
+
+        Ok(details)
     }
 
     // ==================== Seasons ====================

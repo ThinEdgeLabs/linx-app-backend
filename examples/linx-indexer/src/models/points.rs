@@ -2,7 +2,7 @@ use crate::schema;
 use bigdecimal::BigDecimal;
 use chrono::{NaiveDate, NaiveDateTime};
 use diesel::prelude::{AsChangeset, Insertable, Queryable};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 // ==================== Points Config ====================
@@ -173,3 +173,40 @@ pub struct NewPointsSnapshot {
     pub season_id: i32,
 }
 
+/// Individual referral entry with bonus points information
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ReferralDetail {
+    /// Address of the referred user
+    pub referred_user_address: String,
+    /// Bonus points earned by the referrer from this specific user
+    pub bonus_points_earned: i32,
+    /// Total points earned by the referred user (for context)
+    pub referred_user_total_points: i32,
+}
+
+/// Summary of referral information (used internally)
+pub struct ReferralSummary {
+    /// Total number of users referred
+    pub total_referrals: i64,
+    /// Total bonus points earned from all referrals
+    pub total_bonus_points: i32,
+}
+
+/// Complete API response for referral details endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ReferralDetailsResponse {
+    /// Address of the referrer
+    pub referrer_address: String,
+    /// Total number of users referred
+    pub total_referrals: i64,
+    /// Total bonus points earned from all referrals
+    pub total_bonus_points: i32,
+    /// Paginated list of referrals with individual details
+    pub referrals: Vec<ReferralDetail>,
+    /// Current page number
+    pub page: i64,
+    /// Number of results per page
+    pub limit: i64,
+    /// Whether there are more results available
+    pub has_more: bool,
+}

@@ -1,15 +1,15 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::IntoResponse,
     routing::{get, post},
 };
 use bento_server::{AppState, error::AppError};
-use serde::Serialize;
-use utoipa::ToSchema;
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
-use crate::models::{NewUserReferral, Season};
+use crate::models::{NewUserReferral, ReferralDetailsResponse, Season};
 use crate::repository::{PointsRepository, PointsRepositoryTrait};
 
 pub struct PointsRouter;
@@ -20,6 +20,7 @@ impl PointsRouter {
             .route("/points/v1/leaderboard", get(get_leaderboard_handler))
             .route("/points/v1/season", get(get_current_season_handler))
             .route("/points/v1/apply-referral", post(apply_referral_handler))
+            .route("/points/v1/referrals/{address}", get(get_referral_details_handler))
             .route("/points/v1/{address}", get(get_user_points_handler))
     }
 }
@@ -54,6 +55,24 @@ pub struct ApplyReferralRequest {
 pub struct ApplyReferralResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct ReferralDetailsQuery {
+    /// Page number for pagination (starts at 0)
+    #[serde(default = "default_page")]
+    pub page: i64,
+    /// Number of results per page (max 100)
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_page() -> i64 {
+    0
+}
+
+fn default_limit() -> i64 {
+    20
 }
 
 // ==================== Handler Functions ====================
@@ -270,5 +289,67 @@ pub async fn apply_referral_handler(
     Ok(Json(ApplyReferralResponse {
         success: true,
         message: format!("Successfully applied referral code from {}", referral_code.owner_address),
+    }))
+}
+
+/// Get referral details for a referrer
+///
+/// Returns a paginated list of users referred by the specified address,
+/// along with the bonus points earned from each referral.
+#[utoipa::path(
+    get,
+    path = "/points/referrals/{address}",
+    tag = "Points",
+    params(
+        ("address" = String, Path, description = "Referrer wallet address"),
+        ReferralDetailsQuery
+    ),
+    responses(
+        (status = 200, description = "Successfully retrieved referral details", body = ReferralDetailsResponse),
+        (status = 400, description = "Invalid parameters"),
+        (status = 404, description = "No active season found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_referral_details_handler(
+    Path(address): Path<String>,
+    Query(query): Query<ReferralDetailsQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate pagination parameters
+    if query.page < 0 {
+        return Err(AppError::BadRequest("Page number must be non-negative".to_string()));
+    }
+    if query.limit <= 0 || query.limit > 100 {
+        return Err(AppError::BadRequest("Limit must be between 1 and 100".to_string()));
+    }
+
+    let repo = PointsRepository::new(state.db.clone());
+
+    // Get active season
+    let active_season = repo
+        .get_active_season()
+        .await?
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
+
+    // Get summary (total count and total bonus points)
+    let summary = repo.get_referral_summary(&address, active_season.id).await?;
+
+    // Get paginated referral details
+    let referrals = repo
+        .get_referral_details_paginated(&address, active_season.id, query.page, query.limit)
+        .await?;
+
+    // Calculate if there are more results
+    let has_more = (query.page + 1) * query.limit < summary.total_referrals;
+
+    Ok(Json(ReferralDetailsResponse {
+        referrer_address: address,
+        total_referrals: summary.total_referrals,
+        total_bonus_points: summary.total_bonus_points,
+        referrals,
+        page: query.page,
+        limit: query.limit,
+        has_more,
     }))
 }
