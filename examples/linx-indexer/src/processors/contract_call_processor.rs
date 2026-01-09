@@ -21,11 +21,16 @@ pub struct ContractCallProcessor {
 }
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, args: Option<serde_json::Value>| Box::new(ContractCallProcessor::new(db_pool, args))
+    |db_pool, config: Option<Arc<dyn bento_types::config::AppConfigTrait>>| {
+        Box::new(ContractCallProcessor::new(db_pool, config))
+    }
 }
 
 impl ContractCallProcessor {
-    pub fn new(connection_pool: Arc<DbPool>, _args: Option<serde_json::Value>) -> Self {
+    pub fn new(
+        connection_pool: Arc<DbPool>,
+        _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    ) -> Self {
         tracing::debug!("Initialized ContractCallProcessor");
         let repository = AccountTransactionRepository::new(connection_pool.clone());
         let classifier = TransactionClassifier::new(HashSet::new());

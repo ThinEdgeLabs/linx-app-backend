@@ -3,13 +3,9 @@ use crate::models::NewPositionSnapshot;
 use crate::services::price::token_service::TokenService;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
-use bento_cli::load_config;
 use bento_core::{Client, DbPool};
 use bento_trait::stage::ContractsProvider;
-use bento_types::{
-    CallContractParams, CallContractResultType, network::Network,
-    utils::timestamp_millis_to_naive_datetime,
-};
+use bento_types::{CallContractParams, CallContractResultType, utils::timestamp_millis_to_naive_datetime};
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;
 
@@ -20,27 +16,15 @@ pub struct PositionSnapshotService {
 }
 
 impl PositionSnapshotService {
-    pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
-        let client = Client::new(network.clone());
-        let token_service = TokenService::new(network);
+    pub fn new(db_pool: Arc<DbPool>, client: Client, token_service: TokenService) -> Self {
         Self { lending_repository: LendingRepository::new(db_pool), client, token_service }
     }
 
-    pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
-        let config_path = "config.toml";
-        let config = load_config(config_path).expect("Failed to load config");
-        let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
-        let lending_processor_config =
-            processor_config.is_some().then_some(serde_json::to_value(processor_config)?);
-        let linx_address: String = lending_processor_config
-            .as_ref()
-            .and_then(|v| v.get("linx_address").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap();
-        let linx_group: u32 = lending_processor_config
-            .and_then(|v| v.get("linx_group").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap();
+    pub async fn generate_snapshots(
+        &self,
+        linx_address: &str,
+        linx_group: u32,
+    ) -> anyhow::Result<()> {
 
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
@@ -75,7 +59,7 @@ impl PositionSnapshotService {
             };
 
             let market_state = match self
-                .get_market_state(&market.id, &linx_address, linx_group)
+                .get_market_state(&market.id, linx_address, linx_group)
                 .await
             {
                 Ok(state) => state,
@@ -251,14 +235,18 @@ impl PositionSnapshotService {
         }
     }
 
-    pub async fn run_scheduler(&self) -> anyhow::Result<()> {
+    pub async fn run_scheduler(
+        &self,
+        linx_address: &str,
+        linx_group: u32,
+    ) -> anyhow::Result<()> {
         let interval = tokio::time::Duration::from_secs(300); // 5 minutes
         let mut interval_timer = tokio::time::interval(interval);
 
         loop {
             interval_timer.tick().await;
             tracing::info!("Starting scheduled position snapshot generation...");
-            if let Err(e) = self.generate_snapshots().await {
+            if let Err(e) = self.generate_snapshots(linx_address, linx_group).await {
                 tracing::error!("Error during scheduled snapshot generation: {}", e);
             } else {
                 tracing::info!("Scheduled position snapshot generation completed successfully.");

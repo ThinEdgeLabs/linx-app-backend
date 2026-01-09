@@ -1,7 +1,6 @@
 use crate::models::NewMarketStateSnapshot;
 use crate::repository::LendingRepository;
 use anyhow::{Context, Result};
-use bento_cli::load_config;
 use bento_core::{Client, DbPool};
 use bento_trait::stage::ContractsProvider;
 use bento_types::{network::Network, CallContractParams, CallContractResultType};
@@ -16,24 +15,12 @@ pub struct MarketStateSnapshotService {
 }
 
 impl MarketStateSnapshotService {
-    pub fn new(db_pool: Arc<DbPool>, network: Network) -> Self {
-        let config_path = "config.toml";
-        let config = load_config(config_path).expect("Failed to load config");
-        let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
-        let lending_processor_config =
-            processor_config.is_some().then_some(serde_json::to_value(processor_config).ok()).flatten();
-
-        let linx_address: String = lending_processor_config
-            .as_ref()
-            .and_then(|v| v.get("linx_address").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .expect("linx_address not found in config");
-
-        let linx_group: u32 = lending_processor_config
-            .and_then(|v| v.get("linx_group").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .expect("linx_group not found in config");
-
+    pub fn new(
+        db_pool: Arc<DbPool>,
+        network: Network,
+        linx_address: String,
+        linx_group: u32,
+    ) -> Self {
         let client = Client::new(network);
 
         Self { lending_repository: LendingRepository::new(db_pool), client, linx_address, linx_group }

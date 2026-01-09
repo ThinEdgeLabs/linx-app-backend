@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bento_cli::constants::{ALPH_TOKEN_ID, DUST_AMOUNT};
-use bento_types::{CustomProcessorOutput, RichBlockEntry, Transaction};
+use bento_types::{config::AppConfigTrait, CustomProcessorOutput, RichBlockEntry, Transaction};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::{fmt::Debug, str::FromStr};
@@ -14,12 +14,15 @@ use bento_types::{
 };
 use bigdecimal::BigDecimal;
 
+use crate::config::AppConfig;
 use crate::models::{NewAccountTransaction, NewTransferDetails, NewTransferTransactionDto};
 use crate::processors::classifier::{TransactionCategory, TransactionClassifier};
 use crate::repository::AccountTransactionRepository;
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, args: Option<serde_json::Value>| Box::new(TransferProcessor::new(db_pool, args))
+    |db_pool, config: Option<Arc<dyn AppConfigTrait>>| {
+        Box::new(TransferProcessor::new(db_pool, config))
+    }
 }
 
 pub struct TransferProcessor {
@@ -30,11 +33,15 @@ pub struct TransferProcessor {
 }
 
 impl TransferProcessor {
-    pub fn new(connection_pool: Arc<DbPool>, args: Option<serde_json::Value>) -> Self {
+    pub fn new(
+        connection_pool: Arc<DbPool>,
+        config: Option<Arc<dyn AppConfigTrait>>,
+    ) -> Self {
         tracing::debug!("Initialized TransferProcessor");
-        let gas_payer_addresses: HashSet<String> = args
-            .and_then(|v| v.get("gas_payer_addresses").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
+        let gas_payer_addresses = config
+            .as_ref()
+            .and_then(|c| c.as_any().downcast_ref::<AppConfig>())
+            .map(|c| c.gas_payer_addresses.clone())
             .unwrap_or_default();
         let repository = AccountTransactionRepository::new(connection_pool.clone());
         let classifier = TransactionClassifier::new(HashSet::new());

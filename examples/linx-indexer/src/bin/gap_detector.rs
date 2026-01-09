@@ -1,7 +1,8 @@
-use bento_cli::{get_database_url, get_network, load_config};
+use bento_cli::{get_database_url, get_network};
 use bento_core::new_db_pool;
 use bento_core::workers::worker::{BackfillOptions, SyncOptions, Worker};
-use linx_indexer::{get_processor_factories, services::GapDetectionService};
+use linx_indexer::{config::AppConfig, get_processor_factories, services::GapDetectionService};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,9 +10,10 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    //let config_path = std::env::args().nth(2).unwrap_or_else(|| "config.toml".to_string());
-    let config_path = "config.toml";
-    let config = load_config(config_path).expect("Failed to load config");
+    // Load application configuration from environment variables
+    let app_config = AppConfig::from_env()?;
+    let app_config_arc = Some(Arc::new(app_config) as Arc<dyn bento_types::config::AppConfigTrait>);
+
 
     let database_url = get_database_url().expect("DATABASE_URL must be set in environment");
     let db_pool = new_db_pool(&database_url, None).await?;
@@ -82,17 +84,13 @@ async fn main() -> anyhow::Result<()> {
                 bento_core::config::ProcessorConfig::TxProcessor,
             ];
 
-            // Add custom processors from config
-            if let Some(processors) = config.processors.as_ref() {
-                for (name, processor_config) in processors.processors.iter() {
-                    if let Some(factory) = processor_factories.get(name) {
-                        processor_configs.push(bento_core::config::ProcessorConfig::custom(
-                            name.clone(),
-                            *factory,
-                            Some(serde_json::to_value(processor_config).unwrap()),
-                        ));
-                    }
-                }
+            // Add custom processors with app config
+            for (name, factory) in processor_factories.iter() {
+                processor_configs.push(bento_core::config::ProcessorConfig::custom(
+                    name.clone(),
+                    *factory,
+                    app_config_arc.clone(),
+                ));
             }
 
             tracing::info!(

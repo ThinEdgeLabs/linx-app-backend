@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use bento_trait::processor::{new_processor, DynProcessor, ProcessorTrait};
+use bento_types::config::AppConfigTrait;
 
 use crate::db::DbPool;
 
 // Function type for processor factories
-pub type ProcessorFactory = fn(Arc<DbPool>, Option<serde_json::Value>) -> Box<dyn ProcessorTrait>;
+pub type ProcessorFactory = fn(Arc<DbPool>, Option<Arc<dyn AppConfigTrait>>) -> Box<dyn ProcessorTrait>;
 
 /// Extensible processor configuration with support for custom processors
 #[derive(Debug, Clone)]
@@ -15,11 +16,11 @@ pub enum ProcessorConfig {
     EventProcessor,
     TxProcessor,
 
-    /// Custom processors with arguments
+    /// Custom processors with config
     Custom {
         name: String,
         factory: ProcessorFactory,
-        args: Option<serde_json::Value>,
+        config: Option<Arc<dyn AppConfigTrait>>,
     },
 }
 
@@ -37,9 +38,9 @@ impl ProcessorConfig {
     pub fn custom<S: Into<String>>(
         name: S,
         factory: ProcessorFactory,
-        args: Option<serde_json::Value>,
+        config: Option<Arc<dyn AppConfigTrait>>,
     ) -> Self {
-        Self::Custom { name: name.into(), factory, args }
+        Self::Custom { name: name.into(), factory, config }
     }
 
     /// Build a processor from this config
@@ -54,7 +55,7 @@ impl ProcessorConfig {
             ProcessorConfig::TxProcessor => {
                 new_processor(crate::processors::tx_processor::TxProcessor::new(db_pool))
             }
-            ProcessorConfig::Custom { factory, args, .. } => factory(db_pool, args.clone()),
+            ProcessorConfig::Custom { factory, config, .. } => factory(db_pool, config.clone()),
         }
     }
 }

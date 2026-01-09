@@ -61,12 +61,13 @@ pub fn get_network() -> Result<Network> {
 }
 
 async fn new_worker_from_config(
-    config: &Config,
+    _config: &Config,
     processor_factories: &HashMap<String, ProcessorFactory>,
     include_default_processors: bool,
     workers: usize,
     sync_options: Option<SyncOptions>,
     backfill_options: Option<BackfillOptions>,
+    app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
 ) -> Result<Worker> {
     let mut processors = Vec::new();
 
@@ -79,15 +80,10 @@ async fn new_worker_from_config(
     }
 
     for (processor_name, processor_factory) in processor_factories.iter() {
-        let custom_processor_config =
-            config.processors.as_ref().and_then(|p| p.processors.get(processor_name));
-
         let processor_config = ProcessorConfig::Custom {
             name: processor_name.clone(),
             factory: *processor_factory,
-            args: custom_processor_config
-                .is_some()
-                .then_some(serde_json::to_value(custom_processor_config)?),
+            config: app_config.clone(),
         };
         processors.push(processor_config);
     }
@@ -111,6 +107,7 @@ pub async fn new_realtime_worker_from_config(
     config: &Config,
     processor_factories: &HashMap<String, ProcessorFactory>,
     include_default_processors: bool,
+    app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
 ) -> Result<Worker> {
     let workers: usize = 2;
     let step = config.worker.step;
@@ -124,6 +121,7 @@ pub async fn new_realtime_worker_from_config(
         workers,
         Some(SyncOptions { step, backstep, request_interval }),
         None,
+        app_config,
     )
     .await
 }
@@ -134,6 +132,7 @@ pub async fn new_backfill_worker_from_config(
     config: &Config,
     processor_factories: &HashMap<String, ProcessorFactory>,
     include_default_processors: bool,
+    app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
 ) -> Result<Worker> {
     let workers = config.backfill.workers;
     let step = config.backfill.step;
@@ -147,6 +146,7 @@ pub async fn new_backfill_worker_from_config(
         workers,
         None,
         Some(BackfillOptions { start_ts, stop_ts, step, backstep, request_interval }),
+        app_config,
     )
     .await
 }
@@ -209,6 +209,7 @@ pub async fn run_command(
     processor_factories: HashMap<String, ProcessorFactory>,
     router: Option<OpenApiRouter<AppState>>,
     include_default_processors: bool,
+    app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -236,6 +237,7 @@ pub async fn run_command(
                     &config,
                     &processor_factories,
                     include_default_processors,
+                    app_config.clone(),
                 )
                 .await?;
 
@@ -252,6 +254,7 @@ pub async fn run_command(
                     &config,
                     &processor_factories,
                     include_default_processors,
+                    app_config.clone(),
                 )
                 .await?;
 

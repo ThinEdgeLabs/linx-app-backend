@@ -5,20 +5,20 @@ use async_trait::async_trait;
 use bento_core::{DbPool, ProcessorFactory};
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
-    BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput, EventField, RichBlockEntry,
-    processors::ProcessorOutput,
+    config::AppConfigTrait, BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput,
+    EventField, RichBlockEntry, processors::ProcessorOutput,
 };
 use bigdecimal::BigDecimal;
-use serde_json::Value;
 
 use crate::{
+    config::AppConfig,
     models::{Market, NewLendingEvent},
     repository::LendingRepository,
 };
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, args: Option<Value>| {
-        let processor = LendingProcessor::new(db_pool, args);
+    |db_pool, config: Option<Arc<dyn AppConfigTrait>>| {
+        let processor = LendingProcessor::new(db_pool, config);
         Box::new(processor)
     }
 }
@@ -106,12 +106,13 @@ pub struct LendingProcessor {
 }
 
 impl LendingProcessor {
-    pub fn new(connection_pool: Arc<DbPool>, args: Option<Value>) -> Self {
+    pub fn new(connection_pool: Arc<DbPool>, config: Option<Arc<dyn AppConfigTrait>>) -> Self {
         let lending_repository = LendingRepository::new(connection_pool.clone());
-        let linx_address: String = args
-            .and_then(|v| v.get("linx_address").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
+        let linx_address = config
+            .as_ref()
+            .and_then(|c| c.as_any().downcast_ref::<AppConfig>())
+            .map(|c| c.linx_address.clone())
+            .expect("AppConfig with linx_address is required for LendingProcessor");
         Self { connection_pool, linx_address, lending_repository }
     }
 

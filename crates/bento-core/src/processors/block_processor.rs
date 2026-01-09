@@ -12,7 +12,9 @@ use bento_types::{
 use crate::{config::ProcessorConfig, db::DbPool, ProcessorFactory};
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, _args: Option<serde_json::Value>| Box::new(BlockProcessor::new(db_pool))
+    |db_pool, _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>| {
+        Box::new(BlockProcessor::new(db_pool))
+    }
 }
 
 pub struct BlockProcessor {

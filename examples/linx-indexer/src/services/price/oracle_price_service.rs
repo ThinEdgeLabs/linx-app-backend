@@ -1,5 +1,4 @@
 use anyhow::Context;
-use bento_cli::load_config;
 use bento_core::Client;
 use bento_trait::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, network::Network};
@@ -52,23 +51,7 @@ pub struct OraclePriceService {
 }
 
 impl OraclePriceService {
-    pub fn new(network: Network) -> Self {
-        let config_path = "config.toml";
-        let config = load_config(config_path).expect("Failed to load config");
-        let processor_config = config.processors.as_ref().and_then(|p| p.processors.get("lending"));
-        let lending_processor_config =
-            processor_config.is_some().then_some(serde_json::to_value(processor_config).unwrap());
-
-        let dia_oracle_address: String = lending_processor_config
-            .as_ref()
-            .and_then(|v| v.get("dia_oracle_address").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap();
-        let group_index: u32 = lending_processor_config
-            .and_then(|v| v.get("linx_group").cloned())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap();
-
+    pub fn new(network: Network, dia_oracle_address: String, group_index: u32) -> Self {
         let client: Arc<dyn ContractsProvider + Send + Sync> =
             Arc::new(Client::new(network.clone()));
         Self { client, dia_oracle_address, group_index, network }

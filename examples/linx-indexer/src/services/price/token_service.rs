@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use bento_cli::load_config;
 use bento_types::network::Network;
 use bigdecimal::BigDecimal;
 #[cfg(test)]
@@ -35,17 +34,13 @@ pub struct TokenService {
 
 #[cfg_attr(test, automock)]
 impl TokenService {
-    pub fn new(network: Network) -> Self {
-        let config_path = "config.toml";
-        let config = load_config(config_path).expect("Failed to load config");
-
-        let linx_api_url = config
-            .price_service
-            .as_ref()
-            .map(|ps| ps.linx_api_url.clone())
-            .expect("price_service config not found in config.toml");
-
-        let oracle_service = OraclePriceService::new(network.clone());
+    pub fn new(
+        network: Network,
+        linx_api_url: String,
+        dia_oracle_address: String,
+        linx_group: u32,
+    ) -> Self {
+        let oracle_service = OraclePriceService::new(network.clone(), dia_oracle_address, linx_group);
         let linx_service = LinxPriceService::new(linx_api_url, network);
         let cache = Arc::new(RwLock::new(HashMap::new()));
         let cache_ttl = Duration::from_secs(30); // cache prices for 30 seconds
@@ -151,7 +146,12 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires network access and config
     async fn test_get_token_price_real_integration() {
-        let service = TokenService::new(Network::Mainnet);
+        let service = TokenService::new(
+            Network::Mainnet,
+            "https://api.linxlabs.org/tokens".to_string(),
+            "test_oracle".to_string(),
+            0,
+        );
 
         // Test with ALPH (should use oracle)
         let result = service.get_token_price(ALPH_TOKEN_ID).await;
@@ -163,7 +163,12 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires network access and config
     async fn test_cache_functionality() {
-        let service = TokenService::new(Network::Mainnet);
+        let service = TokenService::new(
+            Network::Mainnet,
+            "https://api.linxlabs.org/tokens".to_string(),
+            "test_oracle".to_string(),
+            0,
+        );
 
         // First call - should fetch from API
         let price1 = service.get_token_price(ALPH_TOKEN_ID).await.unwrap();

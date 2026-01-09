@@ -9,7 +9,6 @@ use bento_types::{
     processors::ProcessorOutput, utils::timestamp_millis_to_naive_datetime,
 };
 use bigdecimal::Zero;
-use serde_json::Value;
 
 use crate::{
     address_from_contract_id,
@@ -21,8 +20,8 @@ const AYIN_V2_FACTORY_ADDRESS: &str = "vyrkJHG49TXss6pGAz2dVxq5o7mBXNNXAV18nAeqV
 const ELEXIUM_FACTORY_ADDRESS: &str = "22oTtDJEMjNc9QAdmcZarnEzgkAooJp9gZy7RYBisniR5";
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, args: Option<Value>| {
-        let processor = DexProcessor::new(db_pool, args);
+    |db_pool, config: Option<Arc<dyn bento_types::config::AppConfigTrait>>| {
+        let processor = DexProcessor::new(db_pool, config);
         Box::new(processor)
     }
 }
@@ -34,7 +33,10 @@ pub struct DexProcessor {
 }
 
 impl DexProcessor {
-    pub fn new(connection_pool: Arc<DbPool>, _args: Option<Value>) -> Self {
+    pub fn new(
+        connection_pool: Arc<DbPool>,
+        _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    ) -> Self {
         let swap_repository = AccountTransactionRepository::new(connection_pool.clone());
         let pool_repository = PoolRepository::new(connection_pool.clone());
 
