@@ -286,6 +286,22 @@ pub async fn apply_referral_handler(
 
     repo.insert_user_referral(new_referral).await?;
 
+    // Award signup bonus immediately
+    // Get active season
+    let active_season = repo
+        .get_active_season()
+        .await?
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
+
+    // Load config to get bonus amount
+    let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".to_string());
+    let config = bento_cli::load_config(&config_path)?;
+    let points_config = config.points.expect("Points configuration section is required");
+    let bonus_amount = points_config.signup_bonus;
+
+    // Award the bonus
+    repo.award_bonus_points(&request.user_address, bonus_amount, active_season.id).await?;
+
     Ok(Json(ApplyReferralResponse {
         success: true,
         message: format!("Successfully applied referral code from {}", referral_code.owner_address),

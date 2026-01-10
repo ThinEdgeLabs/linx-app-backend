@@ -121,10 +121,16 @@ pub struct PointsConfig {
     pub referral_percentage: f64,
     #[serde(default = "default_calculation_time")]
     pub calculation_time: String,
+    #[serde(default = "default_signup_bonus")]
+    pub signup_bonus: i32,
 }
 
 fn default_calculation_time() -> String {
     "01:00".to_string()
+}
+
+fn default_signup_bonus() -> i32 {
+    1000  // Default 1000 points signup bonus
 }
 
 #[derive(Args)]

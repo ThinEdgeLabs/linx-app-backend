@@ -701,6 +701,7 @@ mod tests {
         > {
             let config = PointsConfigToml {
                 referral_percentage: 0.05,
+                signup_bonus: 1000,
                 calculation_time: "01:00".to_string(),
             };
 

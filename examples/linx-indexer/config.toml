@@ -11,17 +11,7 @@ backstep = 30000       # 1 minute backstep
 
 [server]
 
-[processors.transfers]
-gas_payer_addresses = ["1C44MNPDY8rNKwaeyrYCF2FPT6rXhNUNtP7fQv81PKjwq"]
-
-[processors.lending]
-linx_address = "2BUbk4ktA7b8GjGBP9JGRvEpdHNMyTtGwTZ1E72K6hH43"
-linx_group = 0
-dia_oracle_address = "216wgM3Xi5uBFYwwiw2T7iZoCy9vozPJ4XjToW74nQjbV"
-
-[price_service]
-linx_api_url = "https://api.linxlabs.org/tokens"
-
 [points]
 referral_percentage = 0.05
+signup_bonus = 1000
 calculation_time = "01:00" # Time in HH:MM format (24-hour) for daily scheduler

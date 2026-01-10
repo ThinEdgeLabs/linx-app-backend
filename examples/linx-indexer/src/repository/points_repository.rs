@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_types::DbPool;
+use bigdecimal::BigDecimal;
 use chrono::NaiveDate;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName};
 use diesel_async::RunQueryDsl;
@@ -126,6 +127,13 @@ pub trait PointsRepositoryTrait {
 
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
+
+    async fn award_bonus_points(
+        &self,
+        user_address: &str,
+        bonus_amount: i32,
+        season_id: i32,
+    ) -> Result<()>;
 }
 
 pub struct PointsRepository {
@@ -762,6 +770,65 @@ impl PointsRepositoryTrait for PointsRepository {
                 .await?;
 
         Ok(upserted_snapshot)
+    }
+
+    async fn award_bonus_points(
+        &self,
+        user_address: &str,
+        bonus_amount: i32,
+        season_id: i32,
+    ) -> Result<()> {
+        let mut conn = self.db_pool.get().await?;
+
+        // Get user's latest snapshot in current season
+        let latest_snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
+            .filter(schema::points_snapshots::address.eq(user_address))
+            .filter(schema::points_snapshots::season_id.eq(season_id))
+            .order(schema::points_snapshots::snapshot_date.desc())
+            .first(&mut conn)
+            .await
+            .optional()?;
+
+        if let Some(snapshot) = latest_snapshot {
+            // Update existing snapshot: add bonus to referral_points and total_points
+            let new_referral_points = snapshot.referral_points + bonus_amount;
+            let new_total_points = snapshot.total_points + bonus_amount;
+
+            diesel::update(schema::points_snapshots::table)
+                .filter(schema::points_snapshots::id.eq(snapshot.id))
+                .set((
+                    schema::points_snapshots::referral_points.eq(new_referral_points),
+                    schema::points_snapshots::total_points.eq(new_total_points),
+                ))
+                .execute(&mut conn)
+                .await?;
+        } else {
+            // Create new snapshot for yesterday with only the signup bonus
+            let yesterday = chrono::Utc::now().date_naive() - chrono::Duration::days(1);
+
+            let new_snapshot = NewPointsSnapshot {
+                address: user_address.to_string(),
+                snapshot_date: yesterday,
+                swap_points: 0,
+                supply_points: 0,
+                borrow_points: 0,
+                base_points_total: 0,
+                multiplier_type: None,
+                multiplier_value: BigDecimal::from(0),
+                multiplier_points: 0,
+                referral_points: bonus_amount,
+                total_points: bonus_amount,
+                total_volume_usd: BigDecimal::from(0),
+                season_id,
+            };
+
+            diesel::insert_into(schema::points_snapshots::table)
+                .values(&new_snapshot)
+                .execute(&mut conn)
+                .await?;
+        }
+
+        Ok(())
     }
 }
 
