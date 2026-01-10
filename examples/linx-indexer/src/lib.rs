@@ -33,6 +33,8 @@ pub enum AddressType {
     P2MPKH = 0x01,
     P2SH = 0x02,
     P2C = 0x03,
+    P2PK = 0x04,   // Groupless Pay-to-Public-Key (Danube upgrade)
+    P2HMPK = 0x05, // Groupless Pay-to-Hashed-Multi-Public-Key (Danube upgrade)
 }
 
 pub fn hex_to_bin_unsafe(hex: &str) -> Vec<u8> {

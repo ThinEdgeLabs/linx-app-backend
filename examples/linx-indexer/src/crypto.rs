@@ -151,25 +151,62 @@ pub fn verify_public_key_for_address(public_key_hex: &str, address: &str) -> any
     let pubkey_bytes = hex::decode(public_key_hex)
         .map_err(|e| anyhow::anyhow!("Invalid public key hex: {}", e))?;
 
-    // Hash the public key with Blake2b-256
-    let mut hasher = Blake2b::<blake2::digest::consts::U32>::new();
-    hasher.update(&pubkey_bytes);
-    let computed_hash = hasher.finalize();
-
     // Decode Alephium address
     let decoded_address = bs58::decode(address)
         .into_vec()
         .map_err(|e| anyhow::anyhow!("Invalid address format: {}", e))?;
 
-    if decoded_address.len() != 33 {
-        // 1 byte type + 32 bytes hash
-        return Err(anyhow::anyhow!("Invalid address length"));
+    if decoded_address.is_empty() {
+        return Err(anyhow::anyhow!("Empty address"));
     }
 
-    let expected_hash = &decoded_address[1..]; // Skip address type byte
+    let address_type = decoded_address[0];
 
-    // Compare hashes
-    Ok(computed_hash.as_slice() == expected_hash)
+    match address_type {
+        // P2PKH, P2MPKH, P2SH, P2C (traditional addresses with hash)
+        0x00..=0x03 => {
+            if decoded_address.len() != 33 {
+                return Err(anyhow::anyhow!("Invalid address length for type {:#x}: expected 33, got {}", address_type, decoded_address.len()));
+            }
+
+            // Hash the public key with Blake2b-256
+            let mut hasher = Blake2b::<blake2::digest::consts::U32>::new();
+            hasher.update(&pubkey_bytes);
+            let computed_hash = hasher.finalize();
+
+            let expected_hash = &decoded_address[1..]; // Skip address type byte
+            Ok(computed_hash.as_slice() == expected_hash)
+        }
+        // P2PK (groupless Pay-to-Public-Key)
+        0x04 => {
+            // P2PK structure: type(1) + pubkey_type(1) + pubkey(33 or 65) + checksum(4)
+            // Minimum length: 1 + 1 + 33 + 4 = 39 bytes (compressed)
+            // Maximum length: 1 + 1 + 65 + 4 = 71 bytes (uncompressed)
+            if decoded_address.len() < 39 {
+                return Err(anyhow::anyhow!("Invalid P2PK address length: expected at least 39, got {}", decoded_address.len()));
+            }
+
+            // Extract the public key from the address
+            // Skip: type(1) + pubkey_type(1) = 2 bytes
+            // Take: pubkey bytes (length depends on compression)
+            // The pubkey ends 4 bytes before the end (checksum(4))
+            let pubkey_start = 2;
+            let pubkey_end = decoded_address.len() - 4;
+            let address_pubkey = &decoded_address[pubkey_start..pubkey_end];
+
+            // Compare the public key directly (P2PK stores the raw public key)
+            Ok(pubkey_bytes == address_pubkey)
+        }
+        // P2HMPK (groupless Pay-to-Hashed-Multi-Public-Key)
+        0x05 => {
+            // For P2HMPK, we cannot verify a single public key
+            // because it's a multisig address with a hash of multiple public keys
+            Err(anyhow::anyhow!("Cannot verify single public key for P2HMPK multisig address"))
+        }
+        _ => {
+            Err(anyhow::anyhow!("Unsupported address type: {:#x}", address_type))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -373,5 +410,33 @@ mod tests {
             .expect("Failed to verify public key");
 
         assert!(!matches, "Wrong public key should not match address");
+    }
+
+    #[test]
+    fn test_verify_signature_with_groupless_address() {
+        // Test with a real P2PK groupless address (type 0x04) from Alephium Danube upgrade
+        let address = "3cUr2FnSMdWJs2t6y9w6BTEgW8WAkMuKTVZuFUscZzD37TGUvg9um";
+        let public_key = "02bf67903fb8101afda8e4137ca0c5a72732d71d6a6c01e8b6f5e770a7c98e523c";
+        let signature = "bfaf59e4ca6c72ecade236468e6f2d50008f5ccbc7843fd1852f5e3d97675c0d6cc37c565a738ea4472f238c818c69f5b8cb537476eee54ca76bda04774fd33a";
+        let referral_code = "HARD-ABYSS-938";
+        let timestamp = 1768034133333i64;
+
+        // Verify the address is P2PK type (0x04)
+        let decoded = bs58::decode(address).into_vec().unwrap();
+        assert_eq!(decoded[0], 0x04, "Address should be P2PK type");
+        assert_eq!(decoded.len(), 39, "Compressed P2PK address should be 39 bytes");
+
+        // Message that should be signed
+        let message = format!("Apply referral: {} at {}", referral_code, timestamp);
+
+        // Test public key verification for groupless P2PK address
+        let pubkey_matches = verify_public_key_for_address(public_key, address)
+            .expect("Public key verification should not error");
+        assert!(pubkey_matches, "Public key should match P2PK groupless address");
+
+        // Test signature verification
+        let sig_valid = verify_signature(public_key, &message, signature)
+            .expect("Signature verification should not error");
+        assert!(sig_valid, "Signature should be valid for P2PK groupless address");
     }
 }
