@@ -68,7 +68,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.linx-app-api.rule=Host(`api.linxlabs.org`) && (PathPrefix(`/history`) || PathPrefix(`/lending`) || PathPrefix(`/points`))"
+      - "traefik.http.routers.linx-app-api.rule=Host(`api.linxlabs.org`) && (PathPrefix(`/history`) || PathPrefix(`/lending`) || PathPrefix(`/points`) || PathPrefix(`/transactions`))"
       - "traefik.http.routers.linx-app-api.entrypoints=websecure"
       - "traefik.http.services.linx-app-api.loadbalancer.server.port=8080"
       - "traefik.http.routers.linx-app-api.tls.certresolver=cfresolver"
