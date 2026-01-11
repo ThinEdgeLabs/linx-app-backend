@@ -37,13 +37,13 @@ pub enum AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AppError::Internal(e) => write!(f, "Internal server error: {}", e),
+            AppError::Internal(_) => write!(f, "Internal server error"),
             AppError::DatabaseError(e) => write!(f, "Database error: {}", e),
             AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
-            AppError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
-            AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            AppError::Forbidden(msg) => write!(f, "{}", msg),
+            AppError::BadRequest(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -56,7 +56,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
             AppError::Internal(e) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("Internal server error: {}", e))
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
             AppError::DatabaseError(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error occurred: {}", e))
@@ -64,12 +64,12 @@ impl IntoResponse for AppError {
             AppError::ValidationError(msg) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, format!("Validation error: {}", msg))
             }
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.to_string()),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, format!("Not found: {}", msg)),
             AppError::Unauthorized(msg) => {
                 (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg))
             }
-            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.to_string()),
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.to_string()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, format!("Forbidden: {}", msg)),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, format!("Bad request: {}", msg)),
         };
 
         // Create a JSON response with error details
