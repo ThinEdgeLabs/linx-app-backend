@@ -248,10 +248,15 @@ where
             NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
         );
 
-        // Query swaps for this date
-        let swaps = self.account_tx_repository.get_swaps_in_period(start_time, end_time).await?;
+        // Query Linx swaps for this date (only swaps submitted through the Linx App earn points)
+        let swaps =
+            self.account_tx_repository.get_linx_swaps_in_period(start_time, end_time).await?;
 
-        tracing::info!("Processing {} swaps for date {}", swaps.len(), date);
+        tracing::info!(
+            "Processing {} Linx swaps for points calculation on {}",
+            swaps.len(),
+            date
+        );
 
         for swap_tx in swaps {
             // Get token info (including decimals and price)

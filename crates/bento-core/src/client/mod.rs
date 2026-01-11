@@ -8,6 +8,8 @@ pub mod block;
 pub mod contracts;
 pub mod transaction;
 
+pub use transaction::SubmitTxResponse;
+
 /// Struct representing a client that interacts with the Alephium node network.
 #[derive(Clone, Debug)]
 pub struct Client {

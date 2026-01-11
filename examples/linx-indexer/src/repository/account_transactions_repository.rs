@@ -23,6 +23,12 @@ pub trait AccountTransactionRepositoryTrait {
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
     ) -> Result<Vec<SwapTransactionDto>>;
+
+    async fn get_linx_swaps_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>>;
 }
 
 pub struct AccountTransactionRepository {
@@ -394,6 +400,86 @@ impl AccountTransactionRepository {
 
         Ok(result)
     }
+
+    /// Get Linx App-initiated swaps in a time period (for points calculation)
+    ///
+    /// This filters swaps to only include those submitted through the Linx App
+    /// by joining with the linx_transactions table.
+    pub async fn get_linx_swaps_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>> {
+        use crate::schema::{account_transactions, linx_transactions, swaps};
+        use bigdecimal::BigDecimal;
+
+        let mut conn = self.db_pool.get().await?;
+
+        // Get account transactions that are swaps AND tracked in linx_transactions table
+        let swap_account_txs: Vec<AccountTransaction> = account_transactions::table
+            .inner_join(swaps::table.on(swaps::account_transaction_id.eq(account_transactions::id)))
+            .inner_join(
+                linx_transactions::table
+                    .on(linx_transactions::tx_id.eq(account_transactions::tx_id)),
+            )
+            .filter(account_transactions::tx_type.eq("swap"))
+            .filter(account_transactions::timestamp.ge(start_time))
+            .filter(account_transactions::timestamp.lt(end_time))
+            .select(AccountTransaction::as_select())
+            .load(&mut conn)
+            .await?;
+
+        if swap_account_txs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Get swap details for these transactions
+        let tx_ids: Vec<i64> = swap_account_txs.iter().map(|tx| tx.id).collect();
+
+        let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
+            .filter(swaps::account_transaction_id.eq_any(&tx_ids))
+            .load::<(i64, i64, String, String, BigDecimal, BigDecimal, String, String)>(&mut conn)
+            .await?
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    account_tx_id,
+                    token_in,
+                    token_out,
+                    amount_in,
+                    amount_out,
+                    pool_address,
+                    tx_id,
+                )| {
+                    (
+                        account_tx_id,
+                        SwapDetails {
+                            id,
+                            token_in,
+                            token_out,
+                            amount_in,
+                            amount_out,
+                            pool_address,
+                            tx_id,
+                        },
+                    )
+                },
+            )
+            .collect();
+
+        let mut result = Vec::new();
+        for account_tx in swap_account_txs {
+            if let Some(swap) = swaps_map.get(&account_tx.id) {
+                result.push(SwapTransactionDto {
+                    account_transaction: account_tx,
+                    swap: swap.clone(),
+                });
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[async_trait]
@@ -404,5 +490,13 @@ impl AccountTransactionRepositoryTrait for AccountTransactionRepository {
         end_time: NaiveDateTime,
     ) -> Result<Vec<SwapTransactionDto>> {
         self.get_swaps_in_period(start_time, end_time).await
+    }
+
+    async fn get_linx_swaps_in_period(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<SwapTransactionDto>> {
+        self.get_linx_swaps_in_period(start_time, end_time).await
     }
 }

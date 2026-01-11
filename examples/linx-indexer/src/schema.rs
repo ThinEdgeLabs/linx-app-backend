@@ -95,6 +95,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    linx_transactions (id) {
+        id -> Int8,
+        tx_id -> Text,
+        user_address -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     loan_actions (id) {
         id -> Int4,
         loan_subcontract_id -> Varchar,
@@ -278,6 +287,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lending_events,
     lending_markets,
     lending_position_snapshots,
+    linx_transactions,
     loan_actions,
     loan_details,
     market_state_snapshots,
