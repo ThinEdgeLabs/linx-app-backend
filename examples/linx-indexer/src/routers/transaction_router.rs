@@ -40,9 +40,6 @@ pub struct SubmitSwapResponse {
 
     /// Chain group (shard) the transaction goes to
     pub to_group: i32,
-
-    /// Success message
-    pub message: String,
 }
 
 /// Submit a swap transaction to the blockchain
@@ -108,7 +105,6 @@ pub async fn submit_swap_handler(
         tx_id: submit_result.tx_id,
         from_group: submit_result.from_group,
         to_group: submit_result.to_group,
-        message: "Swap transaction submitted successfully".to_string(),
     }))
 }
 
