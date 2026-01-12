@@ -1,6 +1,5 @@
 use anyhow::Result;
-use bento_cli::constants::{ALPH_TOKEN_ID, DUST_AMOUNT};
-use bento_types::{config::AppConfigTrait, CustomProcessorOutput, RichBlockEntry, Transaction};
+use bento_types::{CustomProcessorOutput, RichBlockEntry, Transaction, config::AppConfigTrait};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::{fmt::Debug, str::FromStr};
@@ -15,6 +14,7 @@ use bento_types::{
 use bigdecimal::BigDecimal;
 
 use crate::config::AppConfig;
+use crate::constants::{ALPH_TOKEN_ID, DUST_AMOUNT};
 use crate::models::{NewAccountTransaction, NewTransferDetails, NewTransferTransactionDto};
 use crate::processors::classifier::{TransactionCategory, TransactionClassifier};
 use crate::repository::AccountTransactionRepository;
@@ -33,10 +33,7 @@ pub struct TransferProcessor {
 }
 
 impl TransferProcessor {
-    pub fn new(
-        connection_pool: Arc<DbPool>,
-        config: Option<Arc<dyn AppConfigTrait>>,
-    ) -> Self {
+    pub fn new(connection_pool: Arc<DbPool>, config: Option<Arc<dyn AppConfigTrait>>) -> Self {
         tracing::debug!("Initialized TransferProcessor");
         let gas_payer_addresses = config
             .as_ref()

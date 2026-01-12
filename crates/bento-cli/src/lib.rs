@@ -1,4 +1,3 @@
-pub mod constants;
 pub mod types;
 use crate::types::*;
 use bento_types::network::Network;
@@ -20,26 +19,23 @@ use utoipa_axum::router::OpenApiRouter;
 pub fn get_database_url() -> Result<String> {
     let user = std::env::var("POSTGRES_USER").context(
         "POSTGRES_USER environment variable not set. \
-        Please set POSTGRES_USER in .env file"
+        Please set POSTGRES_USER in .env file",
     )?;
 
     let password = std::env::var("POSTGRES_PASSWORD").context(
         "POSTGRES_PASSWORD environment variable not set. \
-        Please set POSTGRES_PASSWORD in .env file"
+        Please set POSTGRES_PASSWORD in .env file",
     )?;
 
     let db = std::env::var("POSTGRES_DB").context(
         "POSTGRES_DB environment variable not set. \
-        Please set POSTGRES_DB in .env file"
+        Please set POSTGRES_DB in .env file",
     )?;
 
     let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
     let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
 
-    Ok(format!(
-        "postgresql://{}:{}@{}:{}/{}",
-        user, password, host, port, db
-    ))
+    Ok(format!("postgresql://{}:{}@{}:{}/{}", user, password, host, port, db))
 }
 
 /// Get network from NETWORK environment variable (testnet, mainnet, or devnet)
@@ -47,7 +43,7 @@ pub fn get_network() -> Result<Network> {
     let network_str = std::env::var("NETWORK").context(
         "NETWORK environment variable not set. \
         Please set NETWORK in .env file or environment. \
-        Example: export NETWORK='testnet'"
+        Example: export NETWORK='testnet'",
     )?;
 
     // Check for optional RPC_URL
@@ -164,12 +160,8 @@ pub async fn new_server_config_from_config(_config: &Config) -> Result<ServerCon
         .parse()
         .context("Invalid API_PORT value")?;
 
-    let server_config = ServerConfig {
-        db_client: db_pool,
-        node_client: client,
-        api_host,
-        api_port,
-    };
+    let server_config =
+        ServerConfig { db_client: db_pool, node_client: client, api_host, api_port };
     Ok(server_config)
 }
 
