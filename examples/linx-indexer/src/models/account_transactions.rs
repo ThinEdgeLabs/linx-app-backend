@@ -82,6 +82,8 @@ pub struct SwapDetails {
     pub amount_out: BigDecimal,
     pub pool_address: String,
     pub tx_id: String,
+    pub hop_count: i32,
+    pub hop_sequence: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

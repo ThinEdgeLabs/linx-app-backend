@@ -234,6 +234,8 @@ diesel::table! {
         amount_out -> Numeric,
         pool_address -> Text,
         tx_id -> Text,
+        hop_count -> Int4,
+        hop_sequence -> Nullable<Int4>,
     }
 }
 

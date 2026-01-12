@@ -164,9 +164,15 @@ impl AccountTransactionRepository {
             let mut account_tx = dto.account_transaction.clone();
             account_tx.tx_type = "swap".to_string();
             let swap = dto.swap.clone();
+            let hop_count = swap.hop_count;
+            let hop_sequence = swap.hop_sequence;
 
             let result = conn
-                .transaction::<_, diesel::result::Error, _>(|conn| {
+                .transaction::<_, diesel::result::Error, _>(move |conn| {
+                    let account_tx = account_tx.clone();
+                    let swap = swap.clone();
+                    let hop_count_val = hop_count;
+                    let hop_sequence_val = hop_sequence;
                     async move {
                         use crate::schema::account_transactions;
 
@@ -188,6 +194,8 @@ impl AccountTransactionRepository {
                                 swaps::amount_out.eq(&swap.amount_out),
                                 swaps::pool_address.eq(&swap.pool_address),
                                 swaps::tx_id.eq(&swap.tx_id),
+                                swaps::hop_count.eq(hop_count_val),
+                                swaps::hop_sequence.eq(hop_sequence_val),
                             ))
                             .execute(conn)
                             .await?;
@@ -255,6 +263,7 @@ impl AccountTransactionRepository {
 
         let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
             .filter(swaps::account_transaction_id.eq_any(&tx_ids))
+            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
             .load::<(
                 i64,
                 i64,
@@ -264,6 +273,8 @@ impl AccountTransactionRepository {
                 bigdecimal::BigDecimal,
                 String,
                 String,
+                i32,
+                Option<i32>,
             )>(&mut conn)
             .await?
             .into_iter()
@@ -277,6 +288,8 @@ impl AccountTransactionRepository {
                     amount_out,
                     pool_address,
                     tx_id,
+                    hop_count,
+                    hop_sequence,
                 )| {
                     (
                         account_tx_id,
@@ -288,6 +301,8 @@ impl AccountTransactionRepository {
                             amount_out,
                             pool_address,
                             tx_id,
+                            hop_count,
+                            hop_sequence,
                         },
                     )
                 },
@@ -349,6 +364,7 @@ impl AccountTransactionRepository {
         // Get swap details for these transactions
         let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
             .filter(swaps::account_transaction_id.eq_any(&tx_ids))
+            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
             .load::<(
                 i64,
                 i64,
@@ -358,6 +374,8 @@ impl AccountTransactionRepository {
                 bigdecimal::BigDecimal,
                 String,
                 String,
+                i32,
+                Option<i32>,
             )>(&mut conn)
             .await?
             .into_iter()
@@ -371,6 +389,8 @@ impl AccountTransactionRepository {
                     amount_out,
                     pool_address,
                     tx_id,
+                    hop_count,
+                    hop_sequence,
                 )| {
                     (
                         account_tx_id,
@@ -382,6 +402,8 @@ impl AccountTransactionRepository {
                             amount_out,
                             pool_address,
                             tx_id,
+                            hop_count,
+                            hop_sequence,
                         },
                     )
                 },
@@ -438,7 +460,8 @@ impl AccountTransactionRepository {
 
         let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
             .filter(swaps::account_transaction_id.eq_any(&tx_ids))
-            .load::<(i64, i64, String, String, BigDecimal, BigDecimal, String, String)>(&mut conn)
+            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
+            .load::<(i64, i64, String, String, BigDecimal, BigDecimal, String, String, i32, Option<i32>)>(&mut conn)
             .await?
             .into_iter()
             .map(
@@ -451,6 +474,8 @@ impl AccountTransactionRepository {
                     amount_out,
                     pool_address,
                     tx_id,
+                    hop_count,
+                    hop_sequence,
                 )| {
                     (
                         account_tx_id,
@@ -462,6 +487,8 @@ impl AccountTransactionRepository {
                             amount_out,
                             pool_address,
                             tx_id,
+                            hop_count,
+                            hop_sequence,
                         },
                     )
                 },
