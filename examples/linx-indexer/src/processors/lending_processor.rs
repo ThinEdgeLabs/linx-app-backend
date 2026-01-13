@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bento_core::{DbPool, ProcessorFactory};
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
-    config::AppConfigTrait, BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput,
-    EventField, RichBlockEntry, processors::ProcessorOutput,
+    BlockAndEvents, ContractEventByBlockHash, CustomProcessorOutput, EventField, RichBlockEntry,
+    config::AppConfigTrait, processors::ProcessorOutput,
 };
 use bigdecimal::BigDecimal;
 
@@ -129,7 +129,7 @@ impl LendingProcessor {
         block: &RichBlockEntry,
         event: &ContractEventByBlockHash,
     ) -> Option<Market> {
-        if event.contract_address == self.linx_address && event.event_index == 0 {
+        if event.contract_address == self.linx_address && event.event_index == 4 {
             Some(Market {
                 id: self.extract_string_field(&event.fields, 0)?,
                 market_contract_id: self.extract_string_field(&event.fields, 1)?,
@@ -167,21 +167,21 @@ impl LendingProcessor {
         event: &ContractEventByBlockHash,
         markets_map: &HashMap<String, Market>,
     ) -> Option<NewLendingEvent> {
-        if event.contract_address == self.linx_address && event.event_index == 6 {
+        if event.contract_address == self.linx_address && event.event_index == 10 {
             self.parse_supply_event(block, event, markets_map)
-        } else if event.contract_address == self.linx_address && event.event_index == 7 {
-            self.parse_withdraw_event(block, event, markets_map)
-        } else if event.contract_address == self.linx_address && event.event_index == 8 {
-            self.parse_borrow_event(block, event, markets_map)
-        } else if event.contract_address == self.linx_address && event.event_index == 9 {
-            self.parse_repay_event(block, event, markets_map)
-        } else if event.contract_address == self.linx_address && event.event_index == 10 {
-            self.parse_supply_collateral_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 11 {
-            self.parse_withdraw_collateral_event(block, event, markets_map)
+            self.parse_withdraw_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 12 {
-            self.parse_liquidate_event(block, event, markets_map)
+            self.parse_borrow_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 13 {
+            self.parse_repay_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 14 {
+            self.parse_supply_collateral_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 15 {
+            self.parse_withdraw_collateral_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 16 {
+            self.parse_liquidate_event(block, event, markets_map)
+        } else if event.contract_address == self.linx_address && event.event_index == 17 {
             self.parse_accrue_interest_event(block, event, markets_map)
         } else {
             None
