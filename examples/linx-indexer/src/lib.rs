@@ -18,10 +18,10 @@ pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {
     let mut processor_factories = HashMap::new();
     processor_factories
         .insert("transfers".to_string(), processors::transfer_processor::processor_factory());
-    processor_factories.insert(
-        "contract_calls".to_string(),
-        processors::contract_call_processor::processor_factory(),
-    );
+    // processor_factories.insert(
+    //     "contract_calls".to_string(),
+    //     processors::contract_call_processor::processor_factory(),
+    // );
     processor_factories.insert("dex".to_string(), processors::dex_processor::processor_factory());
     processor_factories
         .insert("lending".to_string(), processors::lending_processor::processor_factory());

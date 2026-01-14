@@ -5,7 +5,7 @@ use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::models::AccountTransactionDetails;
+use crate::models::AccountTransactionFlattened;
 use crate::repository::AccountTransactionRepository;
 
 use bento_server::AppState;
@@ -38,7 +38,7 @@ fn default_limit() -> i64 {
     tag = "Account Transactions",
     params(AccountTransactionsQuery),
     responses(
-        (status = 200, description = "List of account transactions retrieved successfully", body = Vec<AccountTransactionDetails>),
+        (status = 200, description = "List of account transactions retrieved successfully", body = Vec<AccountTransactionFlattened>),
         (status = 400, description = "Invalid query parameters"),
         (status = 500, description = "Internal server error")
     )
@@ -68,7 +68,11 @@ pub async fn get_account_transactions_handler(
     let transactions =
         account_tx_repo.get_account_transactions(&address, query.limit, query.offset).await?;
 
-    Ok(Json(transactions))
+    // Convert to flattened format
+    let flattened: Vec<AccountTransactionFlattened> =
+        transactions.into_iter().map(|tx| tx.into()).collect();
+
+    Ok(Json(flattened))
 }
 
 // #[derive(Debug, Deserialize, IntoParams, ToSchema)]

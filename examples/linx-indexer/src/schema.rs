@@ -5,11 +5,13 @@ diesel::table! {
         id -> Int8,
         address -> Text,
         tx_type -> Text,
+        tx_id -> Text,
         from_group -> Int2,
         to_group -> Int2,
         block_height -> Int8,
-        tx_id -> Text,
         timestamp -> Timestamp,
+        details -> Jsonb,
+        tx_key -> Text,
     }
 }
 
@@ -32,14 +34,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    contract_calls (id) {
-        id -> Int8,
-        account_transaction_id -> Int8,
-        contract_address -> Text,
-        tx_id -> Text,
-    }
-}
 
 diesel::table! {
     events (id) {
@@ -224,20 +218,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    swaps (id) {
-        id -> Int8,
-        account_transaction_id -> Int8,
-        token_in -> Text,
-        token_out -> Text,
-        amount_in -> Numeric,
-        amount_out -> Numeric,
-        pool_address -> Text,
-        tx_id -> Text,
-        hop_count -> Int4,
-        hop_sequence -> Nullable<Int4>,
-    }
-}
 
 diesel::table! {
     transactions (tx_hash) {
@@ -255,17 +235,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    transfers (id) {
-        id -> Int8,
-        account_transaction_id -> Int8,
-        token_id -> Text,
-        from_address -> Text,
-        to_address -> Text,
-        amount -> Numeric,
-        tx_id -> Text,
-    }
-}
 
 diesel::table! {
     user_referrals (id) {
@@ -276,15 +245,11 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(contract_calls -> account_transactions (account_transaction_id));
 diesel::joinable!(points_snapshots -> points_seasons (season_id));
-diesel::joinable!(swaps -> account_transactions (account_transaction_id));
-diesel::joinable!(transfers -> account_transactions (account_transaction_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_transactions,
     blocks,
-    contract_calls,
     events,
     lending_events,
     lending_markets,
@@ -300,8 +265,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     pools,
     processor_status,
     referral_codes,
-    swaps,
     transactions,
-    transfers,
     user_referrals,
 );

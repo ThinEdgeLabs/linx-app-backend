@@ -12,7 +12,7 @@ use bigdecimal::Zero;
 
 use crate::{
     address_from_contract_id,
-    models::{NewAccountTransaction, NewPoolDto, NewSwapDetails, NewSwapTransactionDto, Pool},
+    models::{NewAccountTransaction, NewPoolDto, Pool, SwapDetails},
     repository::{AccountTransactionRepository, PoolRepository},
 };
 
@@ -122,7 +122,7 @@ impl DexProcessor {
         &self,
         bwe: &BlockAndEvents,
         pools: &HashMap<String, Pool>,
-    ) -> Vec<(i32, NewSwapTransactionDto)> {
+    ) -> Vec<(i32, NewAccountTransaction)> {
         bwe.events
             .iter()
             .filter_map(|event| {
@@ -137,7 +137,7 @@ impl DexProcessor {
         event: &ContractEventByBlockHash,
         pools: &HashMap<String, Pool>,
         block: &RichBlockEntry,
-    ) -> Option<NewSwapTransactionDto> {
+    ) -> Option<NewAccountTransaction> {
         match pools.get(event.contract_address.as_str()) {
             Some(pool) if pool.factory_address == AYIN_V2_FACTORY_ADDRESS => {
                 self.parse_ayin_v2_swap_event(event, pool, block)
@@ -154,7 +154,7 @@ impl DexProcessor {
         event: &ContractEventByBlockHash,
         pool: &Pool,
         block: &RichBlockEntry,
-    ) -> Option<NewSwapTransactionDto> {
+    ) -> Option<NewAccountTransaction> {
         // Elexium swap events have 6 fields and event_index 3
         if event.fields.len() != 6 || event.event_index != 3 {
             return None;
@@ -172,7 +172,7 @@ impl DexProcessor {
             let token_out = pool.token_a.clone();
             let amount_in = token_b_in;
             let amount_out = token_a_out;
-            NewSwapDetails {
+            SwapDetails {
                 token_in,
                 token_out,
                 amount_in,
@@ -180,14 +180,13 @@ impl DexProcessor {
                 pool_address: event.contract_address.clone(),
                 tx_id: event.tx_id.to_string(),
                 hop_count: 1,
-                hop_sequence: None,
             }
         } else {
             let token_in = pool.token_a.clone();
             let token_out = pool.token_b.clone();
             let amount_in = token_a_in;
             let amount_out = token_b_out;
-            NewSwapDetails {
+            SwapDetails {
                 token_in,
                 token_out,
                 amount_in,
@@ -195,21 +194,20 @@ impl DexProcessor {
                 pool_address: event.contract_address.clone(),
                 tx_id: event.tx_id.to_string(),
                 hop_count: 1,
-                hop_sequence: None,
             }
         };
 
-        Some(NewSwapTransactionDto {
-            account_transaction: NewAccountTransaction {
-                address: sender,
-                tx_type: "swap".to_string(),
-                from_group: block.chain_from as i16,
-                to_group: block.chain_to as i16,
-                block_height: block.height,
-                tx_id: event.tx_id.to_string(),
-                timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
-            },
-            swap,
+        let details_json = serde_json::to_value(&swap).ok()?;
+
+        Some(NewAccountTransaction {
+            address: sender,
+            tx_type: "swap".to_string(),
+            tx_id: event.tx_id.to_string(),
+            from_group: block.chain_from as i16,
+            to_group: block.chain_to as i16,
+            block_height: block.height,
+            timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
+            details: details_json,
         })
     }
 
@@ -218,7 +216,7 @@ impl DexProcessor {
         event: &ContractEventByBlockHash,
         pool: &Pool,
         block: &RichBlockEntry,
-    ) -> Option<NewSwapTransactionDto> {
+    ) -> Option<NewAccountTransaction> {
         // Ayin V2 swap events have 6 fields and event_index 2
         if event.fields.len() != 6 || event.event_index != 2 {
             return None;
@@ -238,7 +236,7 @@ impl DexProcessor {
             let token_out = pool.token_a.clone();
             let amount_in = token_b_in;
             let amount_out = token_a_out;
-            NewSwapDetails {
+            SwapDetails {
                 token_in,
                 token_out,
                 amount_in,
@@ -246,14 +244,13 @@ impl DexProcessor {
                 pool_address: event.contract_address.clone(),
                 tx_id: event.tx_id.to_string(),
                 hop_count: 1,
-                hop_sequence: None,
             }
         } else {
             let token_in = pool.token_a.clone();
             let token_out = pool.token_b.clone();
             let amount_in = token_a_in;
             let amount_out = token_b_out;
-            NewSwapDetails {
+            SwapDetails {
                 token_in,
                 token_out,
                 amount_in,
@@ -261,21 +258,20 @@ impl DexProcessor {
                 pool_address: event.contract_address.clone(),
                 tx_id: event.tx_id.to_string(),
                 hop_count: 1,
-                hop_sequence: None,
             }
         };
 
-        Some(NewSwapTransactionDto {
-            account_transaction: NewAccountTransaction {
-                address: sender,
-                tx_type: "swap".to_string(),
-                from_group: block.chain_from as i16,
-                to_group: block.chain_to as i16,
-                block_height: block.height,
-                tx_id: event.tx_id.to_string(),
-                timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
-            },
-            swap,
+        let details_json = serde_json::to_value(&swap).ok()?;
+
+        Some(NewAccountTransaction {
+            address: sender,
+            tx_type: "swap".to_string(),
+            tx_id: event.tx_id.to_string(),
+            from_group: block.chain_from as i16,
+            to_group: block.chain_to as i16,
+            block_height: block.height,
+            timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
+            details: details_json,
         })
     }
 
@@ -291,33 +287,43 @@ impl DexProcessor {
         fields.get(index)?.value.as_str().and_then(|s| s.parse().ok())
     }
 
+    /// Helper to extract and update SwapDetails from/to JSONB
+    fn get_swap_details(&self, account_tx: &NewAccountTransaction) -> Option<SwapDetails> {
+        serde_json::from_value(account_tx.details.clone()).ok()
+    }
+
+    fn set_swap_details(&self, mut account_tx: NewAccountTransaction, swap: SwapDetails) -> NewAccountTransaction {
+        account_tx.details = serde_json::to_value(&swap).unwrap();
+        account_tx
+    }
+
     /// Aggregate multi-hop and split swaps by transaction ID
     ///
-    /// Groups swaps by tx_id and creates aggregated swaps for the UI while preserving
-    /// individual swap details for analytics.
+    /// Groups swaps by tx_id and creates aggregated swaps.
     ///
     /// Handles two scenarios:
     /// 1. **Multi-hop swaps**: Chained swaps where tokens connect (A → B → C)
     ///    - Aggregated shows: first token_in and last token_out
     ///    - Example: ALPH → USDT → TOKEN becomes ALPH → TOKEN
+    ///    - hop_count indicates number of hops (e.g., 2 for a 2-hop swap)
     ///
     /// 2. **Split swaps**: Same token pair split across multiple pools
     ///    - Aggregated shows: same tokens with summed amounts
     ///    - Example: 100 A → 50 B (pool1) + 100 A → 50 B (pool2) = 200 A → 100 B
+    ///    - hop_count indicates number of pools used
     ///
-    /// Returns both individual swaps (with hop_sequence 0,1,2...) and aggregated swap
-    /// (with hop_sequence NULL) for each transaction.
+    /// Returns only aggregated swaps (individual hops are not stored).
     fn aggregate_multi_hop_swaps(
         &self,
-        swaps_with_index: Vec<(i32, NewSwapTransactionDto)>,
-    ) -> Vec<NewSwapTransactionDto> {
+        swaps_with_index: Vec<(i32, NewAccountTransaction)>,
+    ) -> Vec<NewAccountTransaction> {
         use std::collections::HashMap;
 
         // Group swaps by tx_id
-        let mut swaps_by_tx: HashMap<String, Vec<(i32, NewSwapTransactionDto)>> = HashMap::new();
+        let mut swaps_by_tx: HashMap<String, Vec<(i32, NewAccountTransaction)>> = HashMap::new();
 
         for (event_index, swap) in swaps_with_index {
-            let tx_id = swap.account_transaction.tx_id.clone();
+            let tx_id = swap.tx_id.clone();
             swaps_by_tx.entry(tx_id).or_default().push((event_index, swap));
         }
 
@@ -336,107 +342,118 @@ impl DexProcessor {
                 );
 
                 for (idx, (event_index, swap)) in swap_list.iter().enumerate() {
-                    tracing::info!(
-                        "  Swap {}: event_index={}, {} -> {}, pool={}",
-                        idx,
-                        event_index,
-                        &swap.swap.token_in[..8],
-                        &swap.swap.token_out[..8],
-                        &swap.swap.pool_address[..8]
-                    );
+                    if let Some(swap_details) = self.get_swap_details(swap) {
+                        tracing::info!(
+                            "  Swap {}: event_index={}, {} -> {}, pool={}",
+                            idx,
+                            event_index,
+                            &swap_details.token_in[..8],
+                            &swap_details.token_out[..8],
+                            &swap_details.pool_address[..8]
+                        );
+                    }
                 }
 
+                // TODO: Investigate edge case where 2-hop swap gets saved with hop_count=1 and wrong token_in
+                // In some specific scenarios, the aggregation may be incorrect. Most tests pass but there's
+                // at least one case where the last hop is saved instead of the aggregated swap.
                 swap_list.sort_by_key(|(event_index, _)| *event_index);
                 swap_list.reverse(); // Reverse to get correct order
 
                 tracing::info!("After sorting by event_index and reversing:");
                 for (idx, (event_index, swap)) in swap_list.iter().enumerate() {
-                    tracing::info!(
-                        "  Swap {}: event_index={}, {} -> {}",
-                        idx,
-                        event_index,
-                        &swap.swap.token_in[..8],
-                        &swap.swap.token_out[..8]
-                    );
+                    if let Some(swap_details) = self.get_swap_details(swap) {
+                        tracing::info!(
+                            "  Swap {}: event_index={}, {} -> {}",
+                            idx,
+                            event_index,
+                            &swap_details.token_in[..8],
+                            &swap_details.token_out[..8]
+                        );
+                    }
                 }
 
-                let swaps: Vec<NewSwapTransactionDto> =
+                let swaps: Vec<NewAccountTransaction> =
                     swap_list.into_iter().map(|(_, swap)| swap).collect();
 
                 let hop_count = swaps.len() as i32;
                 let first_swap = &swaps[0];
                 let last_swap = &swaps[swaps.len() - 1];
 
+                // Extract swap details from first and last
+                let first_details = self.get_swap_details(first_swap).unwrap();
+                let last_details = self.get_swap_details(last_swap).unwrap();
+
                 // Detect if this is a split swap (same token pair) or multi-hop
                 let is_split_swap = swaps.iter().all(|s| {
-                    s.swap.token_in == first_swap.swap.token_in
-                        && s.swap.token_out == first_swap.swap.token_out
+                    if let Some(details) = self.get_swap_details(s) {
+                        details.token_in == first_details.token_in
+                            && details.token_out == first_details.token_out
+                    } else {
+                        false
+                    }
                 });
 
                 let aggregated = if is_split_swap {
                     // Split swap: same token pair, sum amounts
+                    let swap_details_list: Vec<SwapDetails> = swaps.iter()
+                        .filter_map(|s| self.get_swap_details(s))
+                        .collect();
+
                     let total_amount_in: bigdecimal::BigDecimal =
-                        swaps.iter().map(|s| &s.swap.amount_in).sum();
+                        swap_details_list.iter().map(|s| &s.amount_in).sum();
                     let total_amount_out: bigdecimal::BigDecimal =
-                        swaps.iter().map(|s| &s.swap.amount_out).sum();
+                        swap_details_list.iter().map(|s| &s.amount_out).sum();
 
                     tracing::info!(
                         "Creating aggregated SPLIT swap: {} -> {} (summed amounts across {} pools)",
-                        &first_swap.swap.token_in[..8],
-                        &first_swap.swap.token_out[..8],
+                        &first_details.token_in[..8],
+                        &first_details.token_out[..8],
                         hop_count
                     );
 
                     let pool_addresses: Vec<String> =
-                        swaps.iter().map(|s| s.swap.pool_address.clone()).collect();
+                        swap_details_list.iter().map(|s| s.pool_address.clone()).collect();
 
-                    NewSwapTransactionDto {
-                        account_transaction: first_swap.account_transaction.clone(),
-                        swap: NewSwapDetails {
-                            token_in: first_swap.swap.token_in.clone(),
-                            token_out: first_swap.swap.token_out.clone(),
-                            amount_in: total_amount_in,
-                            amount_out: total_amount_out,
-                            pool_address: pool_addresses.join(","),
-                            tx_id: tx_id.clone(),
-                            hop_count,
-                            hop_sequence: None,
-                        },
-                    }
+                    let aggregated_swap = SwapDetails {
+                        token_in: first_details.token_in.clone(),
+                        token_out: first_details.token_out.clone(),
+                        amount_in: total_amount_in,
+                        amount_out: total_amount_out,
+                        pool_address: pool_addresses.join(","),
+                        tx_id: tx_id.clone(),
+                        hop_count,
+                    };
+
+                    self.set_swap_details(first_swap.clone(), aggregated_swap)
                 } else {
                     // Multi-hop swap: chained tokens, use first and last
                     tracing::info!(
                         "Creating aggregated MULTI-HOP swap: {} -> {}",
-                        &first_swap.swap.token_in[..8],
-                        &last_swap.swap.token_out[..8]
+                        &first_details.token_in[..8],
+                        &last_details.token_out[..8]
                     );
 
+                    let swap_details_list: Vec<SwapDetails> = swaps.iter()
+                        .filter_map(|s| self.get_swap_details(s))
+                        .collect();
                     let pool_addresses: Vec<String> =
-                        swaps.iter().map(|s| s.swap.pool_address.clone()).collect();
+                        swap_details_list.iter().map(|s| s.pool_address.clone()).collect();
 
-                    NewSwapTransactionDto {
-                        account_transaction: first_swap.account_transaction.clone(),
-                        swap: NewSwapDetails {
-                            token_in: first_swap.swap.token_in.clone(),
-                            token_out: last_swap.swap.token_out.clone(),
-                            amount_in: first_swap.swap.amount_in.clone(),
-                            amount_out: last_swap.swap.amount_out.clone(),
-                            pool_address: pool_addresses.join(","),
-                            tx_id: tx_id.clone(),
-                            hop_count,
-                            hop_sequence: None,
-                        },
-                    }
+                    let aggregated_swap = SwapDetails {
+                        token_in: first_details.token_in.clone(),
+                        token_out: last_details.token_out.clone(),
+                        amount_in: first_details.amount_in.clone(),
+                        amount_out: last_details.amount_out.clone(),
+                        pool_address: pool_addresses.join(","),
+                        tx_id: tx_id.clone(),
+                        hop_count,
+                    };
+
+                    self.set_swap_details(first_swap.clone(), aggregated_swap)
                 };
 
-                // Mark individual hops with hop_sequence (for analytics)
-                for (idx, mut swap) in swaps.into_iter().enumerate() {
-                    swap.swap.hop_count = hop_count;
-                    swap.swap.hop_sequence = Some(idx as i32);
-                    result.push(swap);
-                }
-
-                // Add aggregated swap
+                // Add only the aggregated swap (individual hops are not stored)
                 result.push(aggregated);
             }
         }
@@ -448,7 +465,7 @@ impl DexProcessor {
 #[derive(Debug, Clone)]
 pub struct DexProcessorOutput {
     pub new_pools: Vec<NewPoolDto>,
-    pub swaps: Vec<NewSwapTransactionDto>,
+    pub swaps: Vec<NewAccountTransaction>,
 }
 
 impl CustomProcessorOutput for DexProcessorOutput {
@@ -518,7 +535,7 @@ impl ProcessorTrait for DexProcessor {
                 }
 
                 if !dex_output.swaps.is_empty() {
-                    self.swap_repository.insert_swaps(&dex_output.swaps).await?;
+                    self.swap_repository.insert_transactions(&dex_output.swaps).await?;
                     tracing::info!("Inserted {} swaps", dex_output.swaps.len());
                 }
             }

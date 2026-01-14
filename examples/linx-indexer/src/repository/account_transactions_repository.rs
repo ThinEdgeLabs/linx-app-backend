@@ -1,16 +1,10 @@
-use crate::models::{
-    AccountTransaction, NewContractCallTransactionDto, NewSwapTransactionDto,
-    NewTransferTransactionDto, SwapDetails, SwapTransactionDto,
-};
-use crate::models::{AccountTransactionDetails, TransferDetails, TransferTransactionDto};
-use crate::schema::swaps;
+use crate::models::{AccountTransaction, NewAccountTransaction, SwapDetails, SwapTransaction};
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_types::DbPool;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel_async::scoped_futures::ScopedFutureExt;
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::RunQueryDsl;
 #[cfg(test)]
 use mockall::automock;
 use std::sync::Arc;
@@ -18,17 +12,11 @@ use std::sync::Arc;
 #[cfg_attr(test, automock)]
 #[async_trait]
 pub trait AccountTransactionRepositoryTrait {
-    async fn get_swaps_in_period(
-        &self,
-        start_time: NaiveDateTime,
-        end_time: NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>>;
-
     async fn get_linx_swaps_in_period(
         &self,
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>>;
+    ) -> Result<Vec<SwapTransaction>>;
 }
 
 pub struct AccountTransactionRepository {
@@ -40,195 +28,48 @@ impl AccountTransactionRepository {
         Self { db_pool }
     }
 
-    pub async fn insert_transfers(&self, dtos: &Vec<NewTransferTransactionDto>) -> Result<()> {
-        if dtos.is_empty() {
-            return Ok(());
-        }
-
-        let mut conn = self.db_pool.get().await?;
-
-        for dto in dtos {
-            let mut account_tx = dto.account_transaction.clone();
-            account_tx.tx_type = "transfer".to_string();
-            let transfer = dto.transfer.clone();
-
-            let result = conn
-                .transaction::<_, diesel::result::Error, _>(|conn| {
-                    async move {
-                        use crate::schema::{account_transactions, transfers};
-
-                        // Insert account transaction
-                        let inserted_account_tx: AccountTransaction =
-                            diesel::insert_into(account_transactions::table)
-                                .values(&account_tx)
-                                .returning(AccountTransaction::as_returning())
-                                .get_result(conn)
-                                .await?;
-
-                        // Insert transfer - this will fail if duplicate exists
-                        diesel::insert_into(transfers::table)
-                            .values((
-                                transfers::account_transaction_id.eq(inserted_account_tx.id),
-                                transfers::token_id.eq(&transfer.token_id),
-                                transfers::from_address.eq(&transfer.from_address),
-                                transfers::to_address.eq(&transfer.to_address),
-                                transfers::amount.eq(&transfer.amount),
-                                transfers::tx_id.eq(&inserted_account_tx.tx_id),
-                            ))
-                            .execute(conn)
-                            .await?;
-
-                        Ok(())
-                    }
-                    .scope_boxed()
-                })
-                .await;
-
-            if let Err(e) = result {
-                tracing::debug!(
-                    "Failed to insert transfer for tx_id {}: {}",
-                    dto.account_transaction.tx_id,
-                    e
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn insert_contract_calls(
+    /// Generic insert method for any transaction type
+    /// Uses ON CONFLICT DO NOTHING for idempotency
+    pub async fn insert_transactions(
         &self,
-        dtos: &Vec<NewContractCallTransactionDto>,
+        transactions: &[NewAccountTransaction],
     ) -> Result<()> {
-        if dtos.is_empty() {
+        if transactions.is_empty() {
             return Ok(());
         }
 
         let mut conn = self.db_pool.get().await?;
 
-        for dto in dtos {
-            let mut account_tx = dto.account_transaction.clone();
-            account_tx.tx_type = "contract_call".to_string();
-            let contract_call = dto.contract_call.clone();
+        use crate::schema::account_transactions;
 
-            let result = conn
-                .transaction::<_, diesel::result::Error, _>(|conn| {
-                    async move {
-                        use crate::schema::{account_transactions, contract_calls};
-
-                        // Insert account transaction
-                        let inserted_account_tx: AccountTransaction =
-                            diesel::insert_into(account_transactions::table)
-                                .values(&account_tx)
-                                .returning(AccountTransaction::as_returning())
-                                .get_result(conn)
-                                .await?;
-
-                        // Insert contract call - this will fail if duplicate exists
-                        diesel::insert_into(contract_calls::table)
-                            .values((
-                                contract_calls::account_transaction_id.eq(inserted_account_tx.id),
-                                contract_calls::contract_address
-                                    .eq(&contract_call.contract_address),
-                                contract_calls::tx_id.eq(&inserted_account_tx.tx_id),
-                            ))
-                            .execute(conn)
-                            .await?;
-
-                        Ok(())
-                    }
-                    .scope_boxed()
-                })
+        for tx in transactions {
+            let result = diesel::insert_into(account_transactions::table)
+                .values(tx)
+                .on_conflict(account_transactions::tx_key)
+                .do_nothing()
+                .execute(&mut conn)
                 .await;
 
             if let Err(e) = result {
-                tracing::debug!(
-                    "Failed to insert contract call for tx_id {}: {}",
-                    dto.account_transaction.tx_id,
-                    e
-                );
+                tracing::debug!("Failed to insert transaction for tx_id {}: {}", tx.tx_id, e);
             }
         }
 
         Ok(())
     }
 
-    pub async fn insert_swaps(&self, dtos: &Vec<NewSwapTransactionDto>) -> Result<()> {
-        if dtos.is_empty() {
-            return Ok(());
-        }
-
-        let mut conn = self.db_pool.get().await?;
-
-        for dto in dtos {
-            let mut account_tx = dto.account_transaction.clone();
-            account_tx.tx_type = "swap".to_string();
-            let swap = dto.swap.clone();
-            let hop_count = swap.hop_count;
-            let hop_sequence = swap.hop_sequence;
-
-            let result = conn
-                .transaction::<_, diesel::result::Error, _>(move |conn| {
-                    let account_tx = account_tx.clone();
-                    let swap = swap.clone();
-                    let hop_count_val = hop_count;
-                    let hop_sequence_val = hop_sequence;
-                    async move {
-                        use crate::schema::account_transactions;
-
-                        // Insert account transaction
-                        let inserted_account_tx: AccountTransaction =
-                            diesel::insert_into(account_transactions::table)
-                                .values(&account_tx)
-                                .returning(AccountTransaction::as_returning())
-                                .get_result(conn)
-                                .await?;
-
-                        // Insert swap - this will fail if duplicate exists
-                        diesel::insert_into(swaps::table)
-                            .values((
-                                swaps::account_transaction_id.eq(inserted_account_tx.id),
-                                swaps::token_in.eq(&swap.token_in),
-                                swaps::token_out.eq(&swap.token_out),
-                                swaps::amount_in.eq(&swap.amount_in),
-                                swaps::amount_out.eq(&swap.amount_out),
-                                swaps::pool_address.eq(&swap.pool_address),
-                                swaps::tx_id.eq(&swap.tx_id),
-                                swaps::hop_count.eq(hop_count_val),
-                                swaps::hop_sequence.eq(hop_sequence_val),
-                            ))
-                            .execute(conn)
-                            .await?;
-
-                        Ok(())
-                    }
-                    .scope_boxed()
-                })
-                .await;
-
-            if let Err(e) = result {
-                tracing::debug!(
-                    "Failed to insert swap for tx_id {}: {}",
-                    dto.account_transaction.tx_id,
-                    e
-                );
-            }
-        }
-
-        Ok(())
-    }
-
+    /// Get all transactions for an address, ordered by most recent
     pub async fn get_account_transactions(
         &self,
         address: &str,
         limit: i64,
         offset: i64,
-    ) -> Result<Vec<AccountTransactionDetails>> {
+    ) -> Result<Vec<AccountTransaction>> {
         let mut conn = self.db_pool.get().await?;
 
-        use crate::schema::{account_transactions, transfers};
+        use crate::schema::account_transactions;
 
-        let account_txs: Vec<AccountTransaction> = account_transactions::table
+        let txs = account_transactions::table
             .filter(account_transactions::address.eq(address))
             .order_by(account_transactions::timestamp.desc())
             .limit(limit)
@@ -236,214 +77,44 @@ impl AccountTransactionRepository {
             .load(&mut conn)
             .await?;
 
-        if account_txs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let tx_ids: Vec<i64> = account_txs.iter().map(|tx| tx.id).collect();
-
-        let transfers_map: std::collections::HashMap<i64, TransferDetails> = transfers::table
-            .filter(transfers::account_transaction_id.eq_any(&tx_ids))
-            .load::<(i64, i64, String, String, String, bigdecimal::BigDecimal, String)>(&mut conn)
-            .await?
-            .into_iter()
-            .map(|(id, account_tx_id, token_id, from_addr, to_addr, amount, _tx_id)| {
-                (
-                    account_tx_id,
-                    TransferDetails {
-                        id,
-                        token_id,
-                        from_address: from_addr,
-                        to_address: to_addr,
-                        amount,
-                    },
-                )
-            })
-            .collect();
-
-        let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
-            .filter(swaps::account_transaction_id.eq_any(&tx_ids))
-            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
-            .load::<(
-                i64,
-                i64,
-                String,
-                String,
-                bigdecimal::BigDecimal,
-                bigdecimal::BigDecimal,
-                String,
-                String,
-                i32,
-                Option<i32>,
-            )>(&mut conn)
-            .await?
-            .into_iter()
-            .map(
-                |(
-                    id,
-                    account_tx_id,
-                    token_in,
-                    token_out,
-                    amount_in,
-                    amount_out,
-                    pool_address,
-                    tx_id,
-                    hop_count,
-                    hop_sequence,
-                )| {
-                    (
-                        account_tx_id,
-                        SwapDetails {
-                            id,
-                            token_in,
-                            token_out,
-                            amount_in,
-                            amount_out,
-                            pool_address,
-                            tx_id,
-                            hop_count,
-                            hop_sequence,
-                        },
-                    )
-                },
-            )
-            .collect();
-        let mut transaction_details = Vec::new();
-        for account_tx in account_txs {
-            match account_tx.tx_type.as_str() {
-                "transfer" => {
-                    if let Some(transfer) = transfers_map.get(&account_tx.id) {
-                        transaction_details.push(AccountTransactionDetails::Transfer(
-                            TransferTransactionDto {
-                                account_transaction: account_tx,
-                                transfer: transfer.clone(),
-                            },
-                        ));
-                    }
-                }
-                "swap" => {
-                    if let Some(swap) = swaps_map.get(&account_tx.id) {
-                        transaction_details.push(AccountTransactionDetails::Swap(
-                            SwapTransactionDto {
-                                account_transaction: account_tx,
-                                swap: swap.clone(),
-                            },
-                        ));
-                    }
-                }
-                _ => continue,
-            }
-        }
-
-        Ok(transaction_details)
+        Ok(txs)
     }
 
-    pub async fn get_swaps_in_period(
+    /// Get transactions by type in a time period
+    pub async fn get_transactions_by_type_in_period(
         &self,
-        start_time: chrono::NaiveDateTime,
-        end_time: chrono::NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>> {
+        tx_type: &str,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<AccountTransaction>> {
         let mut conn = self.db_pool.get().await?;
 
-        use crate::schema::{account_transactions, swaps};
+        use crate::schema::account_transactions;
 
-        // Get account transactions in period that are swaps
-        let swap_account_txs: Vec<AccountTransaction> = account_transactions::table
-            .filter(account_transactions::tx_type.eq("swap"))
+        let txs = account_transactions::table
+            .filter(account_transactions::tx_type.eq(tx_type))
             .filter(account_transactions::timestamp.ge(start_time))
             .filter(account_transactions::timestamp.lt(end_time))
             .load(&mut conn)
             .await?;
 
-        if swap_account_txs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let tx_ids: Vec<i64> = swap_account_txs.iter().map(|tx| tx.id).collect();
-
-        // Get swap details for these transactions
-        let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
-            .filter(swaps::account_transaction_id.eq_any(&tx_ids))
-            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
-            .load::<(
-                i64,
-                i64,
-                String,
-                String,
-                bigdecimal::BigDecimal,
-                bigdecimal::BigDecimal,
-                String,
-                String,
-                i32,
-                Option<i32>,
-            )>(&mut conn)
-            .await?
-            .into_iter()
-            .map(
-                |(
-                    id,
-                    account_tx_id,
-                    token_in,
-                    token_out,
-                    amount_in,
-                    amount_out,
-                    pool_address,
-                    tx_id,
-                    hop_count,
-                    hop_sequence,
-                )| {
-                    (
-                        account_tx_id,
-                        SwapDetails {
-                            id,
-                            token_in,
-                            token_out,
-                            amount_in,
-                            amount_out,
-                            pool_address,
-                            tx_id,
-                            hop_count,
-                            hop_sequence,
-                        },
-                    )
-                },
-            )
-            .collect();
-
-        let mut result = Vec::new();
-        for account_tx in swap_account_txs {
-            if let Some(swap) = swaps_map.get(&account_tx.id) {
-                result.push(SwapTransactionDto {
-                    account_transaction: account_tx,
-                    swap: swap.clone(),
-                });
-            }
-        }
-
-        Ok(result)
+        Ok(txs)
     }
 
-    /// Get Linx App-initiated swaps in a time period (for points calculation)
-    ///
-    /// This filters swaps to only include those submitted through the Linx App
-    /// by joining with the linx_transactions table.
+    /// Get Linx swaps (swaps submitted through the Linx app) in a time period
+    /// Only swaps that have a corresponding entry in linx_transactions table are returned
     pub async fn get_linx_swaps_in_period(
         &self,
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>> {
-        use crate::schema::{account_transactions, linx_transactions, swaps};
-        use bigdecimal::BigDecimal;
-
+    ) -> Result<Vec<SwapTransaction>> {
         let mut conn = self.db_pool.get().await?;
 
-        // Get account transactions that are swaps AND tracked in linx_transactions table
-        let swap_account_txs: Vec<AccountTransaction> = account_transactions::table
-            .inner_join(swaps::table.on(swaps::account_transaction_id.eq(account_transactions::id)))
-            .inner_join(
-                linx_transactions::table
-                    .on(linx_transactions::tx_id.eq(account_transactions::tx_id)),
-            )
+        use crate::schema::{account_transactions, linx_transactions};
+
+        // Join account_transactions with linx_transactions to filter only Linx swaps
+        let account_txs: Vec<AccountTransaction> = account_transactions::table
+            .inner_join(linx_transactions::table.on(account_transactions::tx_id.eq(linx_transactions::tx_id)))
             .filter(account_transactions::tx_type.eq("swap"))
             .filter(account_transactions::timestamp.ge(start_time))
             .filter(account_transactions::timestamp.lt(end_time))
@@ -451,79 +122,37 @@ impl AccountTransactionRepository {
             .load(&mut conn)
             .await?;
 
-        if swap_account_txs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Get swap details for these transactions
-        let tx_ids: Vec<i64> = swap_account_txs.iter().map(|tx| tx.id).collect();
-
-        let swaps_map: std::collections::HashMap<i64, SwapDetails> = swaps::table
-            .filter(swaps::account_transaction_id.eq_any(&tx_ids))
-            .filter(swaps::hop_sequence.is_null()) // Only aggregated/single swaps
-            .load::<(i64, i64, String, String, BigDecimal, BigDecimal, String, String, i32, Option<i32>)>(&mut conn)
-            .await?
-            .into_iter()
-            .map(
-                |(
-                    id,
-                    account_tx_id,
-                    token_in,
-                    token_out,
-                    amount_in,
-                    amount_out,
-                    pool_address,
-                    tx_id,
-                    hop_count,
-                    hop_sequence,
-                )| {
-                    (
-                        account_tx_id,
-                        SwapDetails {
-                            id,
-                            token_in,
-                            token_out,
-                            amount_in,
-                            amount_out,
-                            pool_address,
-                            tx_id,
-                            hop_count,
-                            hop_sequence,
-                        },
-                    )
-                },
-            )
-            .collect();
-
-        let mut result = Vec::new();
-        for account_tx in swap_account_txs {
-            if let Some(swap) = swaps_map.get(&account_tx.id) {
-                result.push(SwapTransactionDto {
-                    account_transaction: account_tx,
-                    swap: swap.clone(),
+        // Deserialize JSONB details into SwapTransaction
+        let mut swap_transactions = Vec::new();
+        for account_tx in account_txs {
+            // Deserialize the JSONB details field into SwapDetails
+            if let Ok(swap_details) = serde_json::from_value::<SwapDetails>(account_tx.details.clone()) {
+                swap_transactions.push(SwapTransaction {
+                    address: account_tx.address.clone(),
+                    tx_id: account_tx.tx_id.clone(),
+                    token_in: swap_details.token_in,
+                    token_out: swap_details.token_out,
+                    amount_in: swap_details.amount_in,
+                    amount_out: swap_details.amount_out,
+                    pool_address: swap_details.pool_address,
+                    hop_count: swap_details.hop_count,
                 });
+            } else {
+                tracing::warn!("Failed to deserialize swap details for tx_id: {}", account_tx.tx_id);
             }
         }
 
-        Ok(result)
+        Ok(swap_transactions)
     }
 }
 
 #[async_trait]
 impl AccountTransactionRepositoryTrait for AccountTransactionRepository {
-    async fn get_swaps_in_period(
-        &self,
-        start_time: NaiveDateTime,
-        end_time: NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>> {
-        self.get_swaps_in_period(start_time, end_time).await
-    }
-
     async fn get_linx_swaps_in_period(
         &self,
         start_time: NaiveDateTime,
         end_time: NaiveDateTime,
-    ) -> Result<Vec<SwapTransactionDto>> {
+    ) -> Result<Vec<SwapTransaction>> {
         self.get_linx_swaps_in_period(start_time, end_time).await
     }
 }
