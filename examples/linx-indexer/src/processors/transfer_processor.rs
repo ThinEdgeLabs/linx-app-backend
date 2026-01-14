@@ -195,22 +195,39 @@ fn extract_token_transfers(
             }
 
             if in_amount >= out_amount {
+                let transfer_details = NewTransferDetails {
+                    token_id: token_id.to_string(),
+                    from_address: from_addr.to_string(),
+                    to_address: to_addr.to_string(),
+                    amount: out_amount.clone(),
+                };
+
+                let base_account_transaction = NewAccountTransaction {
+                    address: String::new(), // Will be set per record
+                    tx_type: "transfer".to_string(),
+                    from_group: block.chain_from as i16,
+                    to_group: block.chain_to as i16,
+                    block_height: block.height,
+                    tx_id: tx.unsigned.tx_id.to_string(),
+                    timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
+                };
+
+                // Create record for sender
                 transfers.push(NewTransferTransactionDto {
                     account_transaction: NewAccountTransaction {
                         address: from_addr.to_string(),
-                        tx_type: "transfer".to_string(),
-                        from_group: block.chain_from as i16,
-                        to_group: block.chain_to as i16,
-                        block_height: block.height,
-                        tx_id: tx.unsigned.tx_id.to_string(),
-                        timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
+                        ..base_account_transaction.clone()
                     },
-                    transfer: NewTransferDetails {
-                        token_id: token_id.to_string(),
-                        from_address: from_addr.to_string(),
-                        to_address: to_addr.to_string(),
-                        amount: out_amount.clone(),
+                    transfer: transfer_details.clone(),
+                });
+
+                // Create record for receiver
+                transfers.push(NewTransferTransactionDto {
+                    account_transaction: NewAccountTransaction {
+                        address: to_addr.to_string(),
+                        ..base_account_transaction
                     },
+                    transfer: transfer_details,
                 });
                 break;
             }
@@ -253,10 +270,20 @@ mod tests {
         // When
         let transfers = extract_token_transfers(&transaction, &block, &gas_payer_addresses);
 
-        // Then
+        // Then - should create two records: one for sender, one for receiver
+        assert_eq!(transfers.len(), 2);
+
+        let transfer_details = NewTransferDetails {
+            token_id: ALPH_TOKEN_ID.to_string(),
+            from_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
+            to_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
+            amount: BigDecimal::from_i64(500000000000000000).unwrap(),
+        };
+
+        // Sender record
         assert_eq!(
-            transfers,
-            vec![NewTransferTransactionDto {
+            transfers[0],
+            NewTransferTransactionDto {
                 account_transaction: NewAccountTransaction {
                     address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
                     tx_type: "transfer".to_string(),
@@ -267,13 +294,26 @@ mod tests {
                         .to_string(),
                     timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-                transfer: NewTransferDetails {
-                    token_id: ALPH_TOKEN_ID.to_string(),
-                    from_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
-                    to_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
-                    amount: BigDecimal::from_i64(500000000000000000).unwrap(),
+                transfer: transfer_details.clone(),
+            }
+        );
+
+        // Receiver record
+        assert_eq!(
+            transfers[1],
+            NewTransferTransactionDto {
+                account_transaction: NewAccountTransaction {
+                    address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
+                    tx_type: "transfer".to_string(),
+                    from_group: block.chain_from as i16,
+                    to_group: block.chain_to as i16,
+                    block_height: block.height,
+                    tx_id: "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d"
+                        .to_string(),
+                    timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-            }]
+                transfer: transfer_details,
+            }
         );
     }
 
@@ -301,10 +341,21 @@ mod tests {
         // When
         let transfers = extract_token_transfers(&transaction, &block, &gas_payer_addresses);
 
-        // Then
+        // Then - should create two records: one for sender, one for receiver
+        assert_eq!(transfers.len(), 2);
+
+        let transfer_details = NewTransferDetails {
+            token_id: "bb440a66dcffdb75862b6ad6df14d659aa6d1ba8490f6282708aa44ebc80a100"
+                .to_string(),
+            from_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
+            to_address: "19tvYk2qzrSnb3SjVzqxE7EaybVrtxEGGpWYDC6dBcsMa".to_string(),
+            amount: BigDecimal::from_i64(1000000000000000).unwrap(),
+        };
+
+        // Sender record
         assert_eq!(
-            transfers,
-            vec![NewTransferTransactionDto {
+            transfers[0],
+            NewTransferTransactionDto {
                 account_transaction: NewAccountTransaction {
                     address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
                     tx_type: "transfer".to_string(),
@@ -315,14 +366,26 @@ mod tests {
                         .to_string(),
                     timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-                transfer: NewTransferDetails {
-                    token_id: "bb440a66dcffdb75862b6ad6df14d659aa6d1ba8490f6282708aa44ebc80a100"
+                transfer: transfer_details.clone(),
+            }
+        );
+
+        // Receiver record
+        assert_eq!(
+            transfers[1],
+            NewTransferTransactionDto {
+                account_transaction: NewAccountTransaction {
+                    address: "19tvYk2qzrSnb3SjVzqxE7EaybVrtxEGGpWYDC6dBcsMa".to_string(),
+                    tx_type: "transfer".to_string(),
+                    from_group: block.chain_from as i16,
+                    to_group: block.chain_to as i16,
+                    block_height: block.height,
+                    tx_id: "630fefe2f0fca6eb3defcdb665fe1943b5798c0e7507415528ab62ddd01043d6"
                         .to_string(),
-                    from_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
-                    to_address: "19tvYk2qzrSnb3SjVzqxE7EaybVrtxEGGpWYDC6dBcsMa".to_string(),
-                    amount: BigDecimal::from_i64(1000000000000000).unwrap(),
+                    timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-            }]
+                transfer: transfer_details,
+            }
         );
     }
 
@@ -337,10 +400,21 @@ mod tests {
         // When
         let transfers = extract_token_transfers(&transaction, &block, &gas_payer_addresses);
 
-        // Then
+        // Then - should create two records: one for sender, one for receiver
+        assert_eq!(transfers.len(), 2);
+
+        let transfer_details = NewTransferDetails {
+            token_id: "b2d71c116408ae47b931482a440f675dc9ea64453db24ee931dacd578cae9002"
+                .to_string(),
+            from_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
+            to_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
+            amount: BigDecimal::from_i64(2).unwrap(),
+        };
+
+        // Sender record
         assert_eq!(
-            transfers,
-            vec![NewTransferTransactionDto {
+            transfers[0],
+            NewTransferTransactionDto {
                 account_transaction: NewAccountTransaction {
                     address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
                     tx_type: "transfer".to_string(),
@@ -351,14 +425,26 @@ mod tests {
                         .to_string(),
                     timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-                transfer: NewTransferDetails {
-                    token_id: "b2d71c116408ae47b931482a440f675dc9ea64453db24ee931dacd578cae9002"
+                transfer: transfer_details.clone(),
+            }
+        );
+
+        // Receiver record
+        assert_eq!(
+            transfers[1],
+            NewTransferTransactionDto {
+                account_transaction: NewAccountTransaction {
+                    address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
+                    tx_type: "transfer".to_string(),
+                    from_group: block.chain_from as i16,
+                    to_group: block.chain_to as i16,
+                    block_height: block.height,
+                    tx_id: "10bb1edc2dfc3239f14d0917efb8e9b1aa8e3921a4e36fff9d40fc5ec7cf0ebb"
                         .to_string(),
-                    from_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
-                    to_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
-                    amount: BigDecimal::from_i64(2).unwrap(),
+                    timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-            }]
+                transfer: transfer_details,
+            }
         );
     }
 
@@ -372,10 +458,20 @@ mod tests {
         // When
         let transfers = extract_token_transfers(&transaction, &block, &gas_payer_addresses);
 
-        // Then
+        // Then - should create two records: one for sender, one for receiver
+        assert_eq!(transfers.len(), 2);
+
+        let transfer_details = NewTransferDetails {
+            token_id: ALPH_TOKEN_ID.to_string(),
+            from_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
+            to_address: "18Bf8JMSqF6MXVNKpsYo3zpfhob2q2snvu3Df5EEUZ74A".to_string(),
+            amount: BigDecimal::from_i64(50000000000000000).unwrap(),
+        };
+
+        // Sender record
         assert_eq!(
-            transfers,
-            vec![NewTransferTransactionDto {
+            transfers[0],
+            NewTransferTransactionDto {
                 account_transaction: NewAccountTransaction {
                     address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
                     tx_type: "transfer".to_string(),
@@ -386,13 +482,26 @@ mod tests {
                         .to_string(),
                     timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-                transfer: NewTransferDetails {
-                    token_id: ALPH_TOKEN_ID.to_string(),
-                    from_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
-                    to_address: "18Bf8JMSqF6MXVNKpsYo3zpfhob2q2snvu3Df5EEUZ74A".to_string(),
-                    amount: BigDecimal::from_i64(50000000000000000).unwrap(),
+                transfer: transfer_details.clone(),
+            }
+        );
+
+        // Receiver record
+        assert_eq!(
+            transfers[1],
+            NewTransferTransactionDto {
+                account_transaction: NewAccountTransaction {
+                    address: "18Bf8JMSqF6MXVNKpsYo3zpfhob2q2snvu3Df5EEUZ74A".to_string(),
+                    tx_type: "transfer".to_string(),
+                    from_group: block.chain_from as i16,
+                    to_group: block.chain_to as i16,
+                    block_height: block.height,
+                    tx_id: "33fb4ca98b33b57e063298d88acf45bf95ec10d41c43b90e3b8fb3dbfed4ad1f"
+                        .to_string(),
+                    timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 },
-            }]
+                transfer: transfer_details,
+            }
         );
     }
 
@@ -406,35 +515,86 @@ mod tests {
         // When
         let transfers = extract_token_transfers(&transaction, &block, &gas_payer_addresses);
 
-        // Then
+        // Then - 3 transfers × 2 records each (sender + receiver) = 6 total records
+        assert_eq!(transfers.len(), 6);
+
+        // Check first transfer (token 6b89...) - sender record
         assert!(
             transfers.iter().any(|el| el.transfer.token_id
                 == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
                 && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                 && el.transfer.amount == BigDecimal::from_i64(10000000000).unwrap()
+                && el.account_transaction.address
+                    == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.account_transaction.tx_id
                     == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
-            "Expected transfer not found in results"
+            "Expected sender record for first transfer not found"
         );
+        // Check first transfer - receiver record
+        assert!(
+            transfers.iter().any(|el| el.transfer.token_id
+                == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
+                && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
+                && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.transfer.amount == BigDecimal::from_i64(10000000000).unwrap()
+                && el.account_transaction.address
+                    == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.account_transaction.tx_id
+                    == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
+            "Expected receiver record for first transfer not found"
+        );
+
+        // Check second transfer (token cad2...) - sender record
         assert!(
             transfers.iter().any(|el| el.transfer.token_id
                 == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
                 && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                 && el.transfer.amount == BigDecimal::from_i64(100000000000000000).unwrap()
+                && el.account_transaction.address
+                    == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.account_transaction.tx_id
                     == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
-            "Expected transfer not found in results"
+            "Expected sender record for second transfer not found"
         );
+        // Check second transfer - receiver record
+        assert!(
+            transfers.iter().any(|el| el.transfer.token_id
+                == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
+                && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
+                && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.transfer.amount == BigDecimal::from_i64(100000000000000000).unwrap()
+                && el.account_transaction.address
+                    == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.account_transaction.tx_id
+                    == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
+            "Expected receiver record for second transfer not found"
+        );
+
+        // Check third transfer (ALPH) - sender record
         assert!(
             transfers.iter().any(|el| el.transfer.token_id == ALPH_TOKEN_ID
                 && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                 && el.transfer.amount == BigDecimal::from_i64(100000000000000000).unwrap()
+                && el.account_transaction.address
+                    == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                 && el.account_transaction.tx_id
                     == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
-            "Expected transfer not found in results"
+            "Expected sender record for ALPH transfer not found"
+        );
+        // Check third transfer - receiver record
+        assert!(
+            transfers.iter().any(|el| el.transfer.token_id == ALPH_TOKEN_ID
+                && el.transfer.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
+                && el.transfer.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.transfer.amount == BigDecimal::from_i64(100000000000000000).unwrap()
+                && el.account_transaction.address
+                    == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
+                && el.account_transaction.tx_id
+                    == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"),
+            "Expected receiver record for ALPH transfer not found"
         );
     }
 }
