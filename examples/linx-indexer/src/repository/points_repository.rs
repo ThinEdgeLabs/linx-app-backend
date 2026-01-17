@@ -13,9 +13,9 @@ use rand::distr::{Alphanumeric, SampleString};
 
 use crate::{
     models::{
-        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot,
-        NewReferralCode, NewSeason, NewUserReferral, PointsConfig, PointsMultiplier,
-        PointsSnapshot, ReferralCode, Season, UserReferral,
+        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewReferralCode, NewSeason,
+        NewUserReferral, PointsConfig, PointsMultiplier, PointsSnapshot, ReferralCode, Season,
+        UserReferral,
     },
     schema,
 };
@@ -400,9 +400,6 @@ impl PointsRepositoryTrait for PointsRepository {
         use crate::schema::user_referrals::dsl;
         use diesel::sql_types::{Integer, Text};
 
-        // TODO: Make referral percentage configurable (currently hardcoded to match config: 5%)
-        const REFERRAL_PERCENTAGE: f64 = 0.05;
-
         let mut conn = self.db_pool.get().await?;
 
         // Count total referrals
@@ -412,33 +409,28 @@ impl PointsRepositoryTrait for PointsRepository {
             .get_result(&mut conn)
             .await?;
 
-        // Calculate total bonus points using raw SQL for complex query
+        // Get total bonus points from the referrer's latest snapshot
         #[derive(QueryableByName, Debug)]
-        struct BonusSum {
-            #[diesel(sql_type = diesel::sql_types::BigInt)]
-            total_points_sum: i64,
+        struct ReferralPointsResult {
+            #[diesel(sql_type = diesel::sql_types::Integer)]
+            referral_points: i32,
         }
 
         let query = diesel::sql_query(
             r#"
-            SELECT COALESCE(SUM(ps.total_points), 0) as total_points_sum
-            FROM user_referrals ur
-            LEFT JOIN (
-                SELECT DISTINCT ON (address) address, total_points, snapshot_date
-                FROM points_snapshots
-                WHERE season_id = $1
-                ORDER BY address, snapshot_date DESC
-            ) ps ON ur.user_address = ps.address
-            WHERE ur.referred_by_address = $2
+            SELECT COALESCE(referral_points, 0) as referral_points
+            FROM points_snapshots
+            WHERE address = $1 AND season_id = $2
+            ORDER BY snapshot_date DESC
+            LIMIT 1
             "#,
         )
-        .bind::<Integer, _>(season_id)
-        .bind::<Text, _>(referrer_address);
+        .bind::<Text, _>(referrer_address)
+        .bind::<Integer, _>(season_id);
 
-        let result: BonusSum = query.get_result(&mut conn).await?;
+        let result: Option<ReferralPointsResult> = query.get_result(&mut conn).await.optional()?;
 
-        // Calculate bonus points as percentage of total referred points
-        let total_bonus_points = (result.total_points_sum as f64 * REFERRAL_PERCENTAGE) as i32;
+        let total_bonus_points = result.map(|r| r.referral_points).unwrap_or(0);
 
         Ok(crate::models::ReferralSummary { total_referrals, total_bonus_points })
     }
@@ -459,7 +451,7 @@ impl PointsRepositoryTrait for PointsRepository {
 
         let offset = page * limit;
 
-        // Use raw SQL query with DISTINCT ON for latest snapshot per user
+        // Get referred users with their latest snapshot's total_points
         #[derive(QueryableByName, Debug)]
         struct ReferralRow {
             #[diesel(sql_type = diesel::sql_types::Text)]
@@ -474,12 +466,13 @@ impl PointsRepositoryTrait for PointsRepository {
                 ur.user_address,
                 ps.total_points
             FROM user_referrals ur
-            LEFT JOIN (
-                SELECT DISTINCT ON (address) address, total_points, snapshot_date
+            LEFT JOIN LATERAL (
+                SELECT total_points
                 FROM points_snapshots
-                WHERE season_id = $1
-                ORDER BY address, snapshot_date DESC
-            ) ps ON ur.user_address = ps.address
+                WHERE address = ur.user_address AND season_id = $1
+                ORDER BY snapshot_date DESC
+                LIMIT 1
+            ) ps ON true
             WHERE ur.referred_by_address = $2
             ORDER BY COALESCE(ps.total_points, 0) DESC
             LIMIT $3 OFFSET $4
@@ -493,6 +486,7 @@ impl PointsRepositoryTrait for PointsRepository {
         let rows: Vec<ReferralRow> = query.load(&mut conn).await?;
 
         // Convert rows to ReferralDetail structs
+        // Bonus is percentage of referred user's total points
         let details = rows
             .into_iter()
             .map(|row| {

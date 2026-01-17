@@ -39,6 +39,7 @@ struct UserDailyActivity {
     borrow_points: i32,
     borrow_volume_usd: BigDecimal,
     base_points_total: i32,
+    referral_points: i32,
     total_volume_usd: BigDecimal,
 }
 
@@ -53,6 +54,7 @@ impl UserDailyActivity {
             borrow_points: 0,
             borrow_volume_usd: BigDecimal::zero(),
             base_points_total: 0,
+            referral_points: 0,
             total_volume_usd: BigDecimal::zero(),
         }
     }
@@ -522,7 +524,7 @@ where
                 .entry(referrer_address.clone())
                 .or_insert_with(|| UserDailyActivity::new(referrer_address.clone()));
 
-            referrer_activity.base_points_total += referral_points;
+            referrer_activity.referral_points += referral_points;
         }
 
         Ok(())
@@ -557,8 +559,9 @@ where
                 None => 0, // No previous snapshot means this is their first day
             };
 
-            // Calculate cumulative total: previous total + today's points
-            let cumulative_total = previous_total + activity.base_points_total;
+            // Calculate cumulative total: previous total + today's points (base + referral)
+            let cumulative_total =
+                previous_total + activity.base_points_total + activity.referral_points;
 
             snapshots.push(NewPointsSnapshot {
                 address: activity.address.clone(),
@@ -570,7 +573,7 @@ where
                 multiplier_type: None, // TODO: Track which multiplier was applied
                 multiplier_value: BigDecimal::zero(),
                 multiplier_points: 0,
-                referral_points: 0, // TODO: Track referral points separately
+                referral_points: activity.referral_points,
                 total_points: cumulative_total,
                 total_volume_usd: activity.total_volume_usd.clone(),
                 season_id,
