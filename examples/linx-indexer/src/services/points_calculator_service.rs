@@ -162,7 +162,8 @@ where
     pub async fn run_scheduler(&self) -> Result<()> {
         // Parse configured calculation time (e.g., "01:00")
         let time_parts: Vec<&str> = self.config.calculation_time.split(':').collect();
-        let target_hour: u32 = time_parts.first()
+        let target_hour: u32 = time_parts
+            .first()
             .and_then(|h| h.parse().ok())
             .context("Invalid calculation_time hour")?;
         let target_minute: u32 = time_parts
@@ -254,11 +255,7 @@ where
         let swaps =
             self.account_tx_repository.get_linx_swaps_in_period(start_time, end_time).await?;
 
-        tracing::info!(
-            "Processing {} Linx swaps for points calculation on {}",
-            swaps.len(),
-            date
-        );
+        tracing::info!("Processing {} Linx swaps for points calculation on {}", swaps.len(), date);
 
         for swap_tx in swaps {
             // Get token info (including decimals and price)
@@ -390,7 +387,7 @@ where
 
         // Process each user's snapshots
         for (address, mut snapshots) in user_snapshots {
-            // Sort each user's snapshots by timestamp (critical for time-weighted calculation)
+            // Sort snapshots by timestamp (critical for time-weighted calculation)
             snapshots.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
             if snapshots.is_empty() {
                 continue;
@@ -400,51 +397,75 @@ where
                 .entry(address.clone())
                 .or_insert_with(|| UserDailyActivity::new(address.clone()));
 
-            // Calculate time-weighted points for this user
-            // Each snapshot represents the position from its timestamp until the next snapshot
-            for i in 0..snapshots.len() {
-                let current_snapshot = &snapshots[i];
+            // Track current state per market (market_id -> (supply_usd, borrow_usd))
+            let mut market_states: HashMap<String, (BigDecimal, BigDecimal)> = HashMap::new();
 
-                // Determine the time period this snapshot represents
-                let period_start = current_snapshot.timestamp;
+            // Accumulate weighted amounts (dollar-seconds) across all periods
+            let mut total_supply_usd_seconds = BigDecimal::zero();
+            let mut total_borrow_usd_seconds = BigDecimal::zero();
 
-                let period_end = if i == snapshots.len() - 1 {
-                    // Last snapshot: assume position held until end of day
-                    day_end
-                } else {
-                    // Use next snapshot's timestamp
-                    snapshots[i + 1].timestamp
-                };
+            // Collect all unique timestamps where state changes occur
+            let mut timestamps: Vec<NaiveDateTime> =
+                snapshots.iter().map(|s| s.timestamp).collect();
+            timestamps.sort();
+            timestamps.dedup();
+            timestamps.push(day_end); // Add end of day as final boundary
+
+            let mut snapshot_idx = 0;
+
+            // Process each time period between consecutive timestamps
+            for i in 0..timestamps.len() - 1 {
+                let period_start = timestamps[i];
+                let period_end = timestamps[i + 1];
+
+                // Apply all snapshots that occur at period_start to update market states
+                while snapshot_idx < snapshots.len()
+                    && snapshots[snapshot_idx].timestamp == period_start
+                {
+                    let snap = &snapshots[snapshot_idx];
+                    market_states.insert(
+                        snap.market_id.clone(),
+                        (snap.supply_amount_usd.clone(), snap.borrow_amount_usd.clone()),
+                    );
+                    snapshot_idx += 1;
+                }
+
+                // Calculate aggregate supply and borrow across all markets
+                let mut total_supply_usd = BigDecimal::zero();
+                let mut total_borrow_usd = BigDecimal::zero();
+                for (supply, borrow) in market_states.values() {
+                    total_supply_usd += supply;
+                    total_borrow_usd += borrow;
+                }
 
                 // Calculate duration in seconds
                 let duration_seconds = (period_end - period_start).num_seconds();
                 if duration_seconds <= 0 {
-                    continue; // Skip invalid durations
+                    continue;
                 }
 
-                // Calculate supply points for this period
-                if !current_snapshot.supply_amount_usd.is_zero() {
-                    let supply_points_decimal = &current_snapshot.supply_amount_usd
-                        * &supply_points_per_usd_per_second
-                        * BigDecimal::from(duration_seconds);
-                    let supply_points = supply_points_decimal.round(0).to_i32().unwrap_or(0);
+                // Accumulate weighted amounts (dollar-seconds)
+                total_supply_usd_seconds += &total_supply_usd * BigDecimal::from(duration_seconds);
+                total_borrow_usd_seconds += &total_borrow_usd * BigDecimal::from(duration_seconds);
 
-                    activity.supply_points += supply_points;
-                    activity.supply_volume_usd += &current_snapshot.supply_amount_usd;
-                }
-
-                // Calculate borrow points for this period
-                if !current_snapshot.borrow_amount_usd.is_zero() {
-                    let borrow_points_decimal = &current_snapshot.borrow_amount_usd
-                        * &borrow_points_per_usd_per_second
-                        * BigDecimal::from(duration_seconds);
-                    let borrow_points = borrow_points_decimal.round(0).to_i32().unwrap_or(0);
-
-                    activity.borrow_points += borrow_points;
-                    activity.borrow_volume_usd += &current_snapshot.borrow_amount_usd;
-                }
+                // Track volume (sum of amounts held, not time-weighted)
+                activity.supply_volume_usd += &total_supply_usd;
+                activity.borrow_volume_usd += &total_borrow_usd;
             }
 
+            // Calculate points from accumulated dollar-seconds
+            // points = dollar_seconds × (points_per_usd_per_day / seconds_per_day)
+            if !total_supply_usd_seconds.is_zero() {
+                let supply_points_decimal =
+                    &total_supply_usd_seconds * &supply_points_per_usd_per_second;
+                activity.supply_points = supply_points_decimal.round(0).to_i32().unwrap_or(0);
+            }
+
+            if !total_borrow_usd_seconds.is_zero() {
+                let borrow_points_decimal =
+                    &total_borrow_usd_seconds * &borrow_points_per_usd_per_second;
+                activity.borrow_points = borrow_points_decimal.round(0).to_i32().unwrap_or(0);
+            }
         }
 
         Ok(())
