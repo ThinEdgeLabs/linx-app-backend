@@ -58,24 +58,30 @@ impl AccountTransactionRepository {
         Ok(())
     }
 
-    /// Get all transactions for an address, ordered by most recent
+    /// Get all transactions for an address using cursor-based pagination
+    /// Pass `None` for cursor to get the first page
+    /// For subsequent pages, pass the timestamp of the last item from the previous page
     pub async fn get_account_transactions(
         &self,
         address: &str,
         limit: i64,
-        offset: i64,
+        cursor: Option<NaiveDateTime>,
     ) -> Result<Vec<AccountTransaction>> {
         let mut conn = self.db_pool.get().await?;
 
         use crate::schema::account_transactions;
 
-        let txs = account_transactions::table
+        let mut query = account_transactions::table
             .filter(account_transactions::address.eq(address))
             .order_by(account_transactions::timestamp.desc())
             .limit(limit)
-            .offset(offset)
-            .load(&mut conn)
-            .await?;
+            .into_boxed();
+
+        if let Some(cursor_timestamp) = cursor {
+            query = query.filter(account_transactions::timestamp.lt(cursor_timestamp));
+        }
+
+        let txs = query.load(&mut conn).await?;
 
         Ok(txs)
     }

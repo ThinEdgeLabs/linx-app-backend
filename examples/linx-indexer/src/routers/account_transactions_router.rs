@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
+use chrono::DateTime;
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -24,8 +25,8 @@ pub struct AccountTransactionsQuery {
     pub address: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: i64,
-    #[serde(default)]
-    pub offset: i64,
+    /// Cursor for pagination - pass the timestamp (Unix millis) of the last item from the previous page
+    pub cursor: Option<i64>,
 }
 
 fn default_limit() -> i64 {
@@ -51,10 +52,6 @@ pub async fn get_account_transactions_handler(
         return Err(AppError::BadRequest("Limit must be between 1 and 100".to_string()));
     }
 
-    if query.offset < 0 {
-        return Err(AppError::BadRequest("Offset must be non-negative".to_string()));
-    }
-
     let address = match query.address {
         Some(addr) if !addr.is_empty() => addr,
         Some(_) => {
@@ -63,10 +60,14 @@ pub async fn get_account_transactions_handler(
         None => return Err(AppError::BadRequest("Missing parameter address".to_string())),
     };
 
+    let cursor = query.cursor.and_then(|millis| {
+        DateTime::from_timestamp_millis(millis).map(|dt| dt.naive_utc())
+    });
+
     let account_tx_repo = AccountTransactionRepository::new(state.db.clone());
 
     let transactions =
-        account_tx_repo.get_account_transactions(&address, query.limit, query.offset).await?;
+        account_tx_repo.get_account_transactions(&address, query.limit, cursor).await?;
 
     // Convert to flattened format
     let flattened: Vec<AccountTransactionFlattened> =
