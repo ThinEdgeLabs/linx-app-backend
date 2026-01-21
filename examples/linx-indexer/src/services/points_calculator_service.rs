@@ -257,6 +257,9 @@ where
 
         tracing::info!("Processing {} Linx swaps for points calculation on {}", swaps.len(), date);
 
+        // Accumulate USD volume per user first
+        let mut user_swap_volumes: HashMap<String, BigDecimal> = HashMap::new();
+
         for swap_tx in swaps {
             // Get token info (including decimals and price)
             let token_info = match self.price_service.get_token_info(&swap_tx.token_in).await {
@@ -289,20 +292,27 @@ where
                 }
             };
 
-            // Calculate USD value
+            // Calculate USD value and accumulate per user
             let amount_usd = &decimal_amount * &token_price;
-
-            // Calculate points (convert to i32 by rounding)
-            let points_earned_decimal = &amount_usd * points_per_usd;
-            let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
-
-            // Get or create user activity
-            let activity = user_activities
+            *user_swap_volumes
                 .entry(swap_tx.address.clone())
-                .or_insert_with(|| UserDailyActivity::new(swap_tx.address.clone()));
+                .or_insert_with(BigDecimal::zero) += amount_usd;
+        }
 
-            activity.swap_points += points_earned;
-            activity.swap_volume_usd += &amount_usd;
+        // Calculate points from accumulated USD volumes
+        for (address, total_volume_usd) in user_swap_volumes {
+            let activity = user_activities
+                .entry(address.clone())
+                .or_insert_with(|| UserDailyActivity::new(address));
+
+            // Calculate points once from total volume (round up)
+            let points_earned_decimal = &total_volume_usd * points_per_usd;
+            let points_earned = points_earned_decimal
+                .with_scale_round(0, bigdecimal::RoundingMode::Ceiling)
+                .to_i32()
+                .unwrap_or(0);
+            activity.swap_points = points_earned;
+            activity.swap_volume_usd = total_volume_usd;
         }
 
         Ok(())
