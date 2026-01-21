@@ -42,14 +42,6 @@ pub struct BackfillArgs {
     #[arg(short, long, default_value = "config.toml")]
     pub config_path: String,
 
-    /// The processor name to backfill for
-    #[arg(short, long = "processor")]
-    pub processor_name: Option<String>,
-
-    /// The network to backfill for
-    #[arg(short, long = "network", value_parser = ["devnet", "testnet", "mainnet"])]
-    pub network: Option<String>,
-
     /// The timestamp to start the backfill from
     #[arg(long = "start")]
     pub start: Option<u64>,

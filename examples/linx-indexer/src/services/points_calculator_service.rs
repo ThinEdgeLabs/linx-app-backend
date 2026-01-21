@@ -259,13 +259,13 @@ where
 
         for swap_tx in swaps {
             // Get token info (including decimals and price)
-            let token_info = match self.price_service.get_token_info(&swap_tx.swap.token_in).await {
+            let token_info = match self.price_service.get_token_info(&swap_tx.token_in).await {
                 Ok(info) => info,
                 Err(e) => {
                     tracing::warn!(
                         "Failed to get token info for {} in swap {}: {}",
-                        swap_tx.swap.token_in,
-                        swap_tx.swap.tx_id,
+                        swap_tx.token_in,
+                        swap_tx.tx_id,
                         e
                     );
                     continue;
@@ -273,17 +273,16 @@ where
             };
 
             // Convert raw amount to decimal amount using token decimals
-            let decimal_amount = token_info.convert_to_decimal(&swap_tx.swap.amount_in);
+            let decimal_amount = token_info.convert_to_decimal(&swap_tx.amount_in);
 
             // Get token price
-            let token_price = match self.price_service.get_token_price(&swap_tx.swap.token_in).await
-            {
+            let token_price = match self.price_service.get_token_price(&swap_tx.token_in).await {
                 Ok(price) => price,
                 Err(e) => {
                     tracing::warn!(
                         "Failed to get price for token {} in swap {}: {}",
-                        swap_tx.swap.token_in,
-                        swap_tx.swap.tx_id,
+                        swap_tx.token_in,
+                        swap_tx.tx_id,
                         e
                     );
                     continue;
@@ -298,10 +297,9 @@ where
             let points_earned = points_earned_decimal.round(0).to_i32().unwrap_or(0);
 
             // Get or create user activity
-            let activity =
-                user_activities.entry(swap_tx.account_transaction.address.clone()).or_insert_with(
-                    || UserDailyActivity::new(swap_tx.account_transaction.address.clone()),
-                );
+            let activity = user_activities
+                .entry(swap_tx.address.clone())
+                .or_insert_with(|| UserDailyActivity::new(swap_tx.address.clone()));
 
             activity.swap_points += points_earned;
             activity.swap_volume_usd += &amount_usd;
@@ -674,7 +672,7 @@ mod tests {
         }
 
         fn with_no_swaps(mut self) -> Self {
-            self.account_repo.expect_get_swaps_in_period().returning(|_, _| Ok(vec![]));
+            self.account_repo.expect_get_linx_swaps_in_period().returning(|_, _| Ok(vec![]));
             self
         }
 

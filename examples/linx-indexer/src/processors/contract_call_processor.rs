@@ -10,7 +10,7 @@ use bento_types::{
 };
 
 use crate::{
-    models::{NewAccountTransaction, NewContractCallDetails, NewContractCallTransactionDto},
+    models::{ContractCallDetails, NewAccountTransaction},
     processors::classifier::{TransactionCategory, TransactionClassifier},
     repository::AccountTransactionRepository,
 };
@@ -51,7 +51,7 @@ impl Debug for ContractCallProcessor {
 
 #[derive(Debug, Clone)]
 pub struct ContractCallProcessorOutput {
-    pub contract_calls: Vec<NewContractCallTransactionDto>,
+    pub contract_calls: Vec<NewAccountTransaction>,
 }
 
 impl CustomProcessorOutput for ContractCallProcessorOutput {
@@ -96,7 +96,7 @@ impl ProcessorTrait for ContractCallProcessor {
             {
                 let contract_calls = &contract_call_output.contract_calls;
                 if !contract_calls.is_empty() {
-                    self.repository.insert_contract_calls(contract_calls).await?;
+                    self.repository.insert_transactions(contract_calls).await?;
                     tracing::info!("Inserted {} contract calls", contract_calls.len());
                 }
             } else {
@@ -113,7 +113,7 @@ impl ProcessorTrait for ContractCallProcessor {
 pub fn extract_contract_call(
     tx: &Transaction,
     block: &RichBlockEntry,
-) -> Option<NewContractCallTransactionDto> {
+) -> Option<NewAccountTransaction> {
     // NOTE: Choosing the first input is possibly not the best approach.
     // Also if the transaction has no inputs we cannot identify the sender.
     let address = tx.unsigned.inputs.first().map(|input| &input.address);
@@ -123,18 +123,20 @@ pub fn extract_contract_call(
         return None;
     }
 
-    Some(NewContractCallTransactionDto {
-        account_transaction: NewAccountTransaction {
-            address: address.unwrap().to_string(),
-            tx_type: "contract_call".to_string(),
-            from_group: block.chain_from as i16,
-            to_group: block.chain_to as i16,
-            block_height: block.height,
-            tx_id: tx.unsigned.tx_id.to_string(),
-            timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
-        },
-        contract_call: NewContractCallDetails {
-            contract_address: contract_address.unwrap().to_string(),
-        },
+    let contract_call_details = ContractCallDetails {
+        contract_address: contract_address.unwrap().to_string(),
+    };
+
+    let details_json = serde_json::to_value(&contract_call_details).ok()?;
+
+    Some(NewAccountTransaction {
+        address: address.unwrap().to_string(),
+        tx_type: "contract_call".to_string(),
+        tx_id: tx.unsigned.tx_id.to_string(),
+        from_group: block.chain_from as i16,
+        to_group: block.chain_to as i16,
+        block_height: block.height,
+        timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
+        details: details_json,
     })
 }

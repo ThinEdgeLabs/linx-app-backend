@@ -1,0 +1,2 @@
+-- This migration is not reversible
+-- You will need to restore from backup or reindex from scratch
