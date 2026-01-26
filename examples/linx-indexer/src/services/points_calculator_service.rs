@@ -539,7 +539,15 @@ where
 
             for referred_user in referred_users {
                 if let Some(referred_activity) = user_activities.get(&referred_user) {
-                    total_referred_points += referred_activity.base_points_total;
+                    // Only count users with actual activity (swaps or lending)
+                    // This prevents exploitation via fake accounts that only claim signup bonus
+                    let has_activity = referred_activity.swap_points > 0
+                        || referred_activity.supply_points > 0
+                        || referred_activity.borrow_points > 0;
+
+                    if has_activity {
+                        total_referred_points += referred_activity.base_points_total;
+                    }
                 }
             }
 

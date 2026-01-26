@@ -397,42 +397,49 @@ impl PointsRepositoryTrait for PointsRepository {
         referrer_address: &str,
         season_id: i32,
     ) -> Result<crate::models::ReferralSummary> {
-        use crate::schema::user_referrals::dsl;
         use diesel::sql_types::{Integer, Text};
 
         let mut conn = self.db_pool.get().await?;
 
-        // Count total referrals
-        let total_referrals: i64 = dsl::user_referrals
-            .filter(dsl::referred_by_address.eq(referrer_address))
-            .count()
-            .get_result(&mut conn)
-            .await?;
-
-        // Get total bonus points from the referrer's latest snapshot
+        // Calculate total referrals with activity AND total bonus points
+        // Bonus is calculated per user (floor(total_points * 0.05)), then summed
         #[derive(QueryableByName, Debug)]
-        struct ReferralPointsResult {
-            #[diesel(sql_type = diesel::sql_types::Integer)]
-            referral_points: i32,
+        struct ReferralSummaryResult {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            total_referrals: i64,
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            total_bonus_points: i64,
         }
 
         let query = diesel::sql_query(
             r#"
-            SELECT COALESCE(referral_points, 0) as referral_points
-            FROM points_snapshots
-            WHERE address = $1 AND season_id = $2
-            ORDER BY snapshot_date DESC
-            LIMIT 1
+            SELECT
+                COUNT(*)::bigint as total_referrals,
+                COALESCE(SUM(FLOOR(latest.total_points * 0.05)), 0)::bigint as total_bonus_points
+            FROM user_referrals ur
+            INNER JOIN LATERAL (
+                SELECT total_points
+                FROM points_snapshots
+                WHERE address = ur.user_address AND season_id = $1
+                ORDER BY snapshot_date DESC
+                LIMIT 1
+            ) latest ON true
+            WHERE ur.referred_by_address = $2
+              AND EXISTS (
+                SELECT 1 FROM points_snapshots
+                WHERE address = ur.user_address AND season_id = $1 AND base_points_total > 0
+              )
             "#,
         )
-        .bind::<Text, _>(referrer_address)
-        .bind::<Integer, _>(season_id);
+        .bind::<Integer, _>(season_id)
+        .bind::<Text, _>(referrer_address);
 
-        let result: Option<ReferralPointsResult> = query.get_result(&mut conn).await.optional()?;
+        let result: ReferralSummaryResult = query.get_result(&mut conn).await?;
 
-        let total_bonus_points = result.map(|r| r.referral_points).unwrap_or(0);
-
-        Ok(crate::models::ReferralSummary { total_referrals, total_bonus_points })
+        Ok(crate::models::ReferralSummary {
+            total_referrals: result.total_referrals,
+            total_bonus_points: result.total_bonus_points as i32,
+        })
     }
 
     async fn get_referral_details_paginated(
@@ -452,29 +459,34 @@ impl PointsRepositoryTrait for PointsRepository {
         let offset = page * limit;
 
         // Get referred users with their latest snapshot's total_points
+        // Only include users with actual activity (any base_points_total > 0) to prevent exploitation
         #[derive(QueryableByName, Debug)]
         struct ReferralRow {
             #[diesel(sql_type = diesel::sql_types::Text)]
             user_address: String,
-            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-            total_points: Option<i32>,
+            #[diesel(sql_type = diesel::sql_types::Integer)]
+            total_points: i32,
         }
 
         let query = diesel::sql_query(
             r#"
             SELECT
                 ur.user_address,
-                ps.total_points
+                latest.total_points
             FROM user_referrals ur
-            LEFT JOIN LATERAL (
+            INNER JOIN LATERAL (
                 SELECT total_points
                 FROM points_snapshots
                 WHERE address = ur.user_address AND season_id = $1
                 ORDER BY snapshot_date DESC
                 LIMIT 1
-            ) ps ON true
+            ) latest ON true
             WHERE ur.referred_by_address = $2
-            ORDER BY COALESCE(ps.total_points, 0) DESC
+              AND EXISTS (
+                SELECT 1 FROM points_snapshots
+                WHERE address = ur.user_address AND season_id = $1 AND base_points_total > 0
+              )
+            ORDER BY latest.total_points DESC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -486,18 +498,16 @@ impl PointsRepositoryTrait for PointsRepository {
         let rows: Vec<ReferralRow> = query.load(&mut conn).await?;
 
         // Convert rows to ReferralDetail structs
-        // Bonus is percentage of referred user's total points
+        // Bonus is percentage of referred user's total points (only users with activity)
         let details = rows
             .into_iter()
             .map(|row| {
-                let referred_user_total_points = row.total_points.unwrap_or(0);
-                let bonus_points_earned =
-                    (referred_user_total_points as f64 * REFERRAL_PERCENTAGE) as i32;
+                let bonus_points_earned = (row.total_points as f64 * REFERRAL_PERCENTAGE) as i32;
 
                 crate::models::ReferralDetail {
                     referred_user_address: row.user_address,
                     bonus_points_earned,
-                    referred_user_total_points,
+                    referred_user_total_points: row.total_points,
                 }
             })
             .collect();
