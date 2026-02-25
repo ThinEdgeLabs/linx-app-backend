@@ -83,8 +83,8 @@ impl ProcessorTrait for LendingProcessor {
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        if let ProcessorOutput::Custom(custom) = output {
-            if let Some(lending_output) = custom.as_any().downcast_ref::<LendingProcessorOutput>() {
+        if let ProcessorOutput::Custom(custom) = output
+            && let Some(lending_output) = custom.as_any().downcast_ref::<LendingProcessorOutput>() {
                 if !lending_output.markets.is_empty() {
                     self.lending_repository.insert_markets(&lending_output.markets).await?;
                     tracing::info!("Inserted {} new markets", lending_output.markets.len());
@@ -94,7 +94,6 @@ impl ProcessorTrait for LendingProcessor {
                     tracing::info!("Inserted {} new events", lending_output.events.len());
                 }
             }
-        }
         Ok(())
     }
 }

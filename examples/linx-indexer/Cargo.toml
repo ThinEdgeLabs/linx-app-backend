@@ -1,6 +1,6 @@
 [package]
 name = "linx-indexer"
-version = "1.5.2"
+version = "1.6.0"
 edition = "2024"
 
 [[bin]]
@@ -53,3 +53,4 @@ reqwest.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true
+serial_test = "3.4.0"

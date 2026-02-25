@@ -20,7 +20,7 @@ pub type DbPool = Pool<AsyncPgConnection>;
 pub type DbPoolConnection<'a> = PooledConnection<'a, AsyncPgConnection>;
 
 // Establish a connection to the database
-fn establish_connection(database_url: &str) -> BoxFuture<ConnectionResult<AsyncPgConnection>> {
+fn establish_connection(database_url: &str) -> BoxFuture<'_, ConnectionResult<AsyncPgConnection>> {
     use native_tls::{Certificate, TlsConnector};
     use postgres_native_tls::MakeTlsConnector;
 

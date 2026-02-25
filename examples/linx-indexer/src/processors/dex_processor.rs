@@ -527,8 +527,8 @@ impl ProcessorTrait for DexProcessor {
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        if let ProcessorOutput::Custom(custom) = output {
-            if let Some(dex_output) = custom.as_any().downcast_ref::<DexProcessorOutput>() {
+        if let ProcessorOutput::Custom(custom) = output
+            && let Some(dex_output) = custom.as_any().downcast_ref::<DexProcessorOutput>() {
                 if !dex_output.new_pools.is_empty() {
                     self.pool_repository.insert_pools(&dex_output.new_pools).await?;
                     tracing::info!("Inserted {} new pools", dex_output.new_pools.len());
@@ -539,7 +539,6 @@ impl ProcessorTrait for DexProcessor {
                     tracing::info!("Inserted {} swaps", dex_output.swaps.len());
                 }
             }
-        }
         Ok(())
     }
 }

@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
 use crate::{
-    models::{LendingEvent, Market, Position},
+    models::{LendingEvent, Market, Position, Timeframe, UserPositionHistoryPoint},
     repository::LendingRepository,
 };
 
@@ -23,6 +23,10 @@ impl LendingRouter {
             .route("/lending/v1/borrow-activity", get(get_borrow_activity))
             .route("/lending/v1/earn-activity", get(get_earn_activity))
             .route("/lending/v1/positions", get(get_positions))
+            .route(
+                "/lending/v1/history/user-positions",
+                get(get_user_position_history),
+            )
     }
 }
 
@@ -195,4 +199,50 @@ pub async fn get_positions(
         lending_repo.get_positions(query.market_id, query.address, query.page, query.limit).await?;
 
     Ok(Json(positions))
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct UserPositionHistoryQuery {
+    pub address: String,
+    pub market_id: Option<String>,
+    pub timeframe: Timeframe,
+}
+
+#[utoipa::path(
+    get,
+    path = "/lending/history/user-positions",
+    tag = "History",
+    params(UserPositionHistoryQuery),
+    responses(
+        (status = 200, description = "User position history for charting", body = Vec<UserPositionHistoryPoint>),
+        (status = 400, description = "Invalid query parameters"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_user_position_history(
+    Query(query): Query<UserPositionHistoryQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    if query.address.trim().is_empty() {
+        return Err(AppError::BadRequest("address is required".to_string()));
+    }
+
+    if let Some(ref mid) = query.market_id
+        && mid.trim().is_empty()
+    {
+        return Err(AppError::BadRequest(
+            "market_id cannot be blank".to_string(),
+        ));
+    }
+
+    let lending_repo = LendingRepository::new(state.db.clone());
+    let history = lending_repo
+        .get_user_position_history(
+            &query.address,
+            query.market_id.as_deref(),
+            query.timeframe,
+        )
+        .await?;
+
+    Ok(Json(history))
 }
