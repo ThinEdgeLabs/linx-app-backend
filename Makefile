@@ -1,4 +1,4 @@
-.PHONY: build rebuild deploy start stop restart cli db clean-images help
+.PHONY: pull deploy start stop restart cli db clean-images help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -13,22 +13,14 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-# Build all Docker images
-build:
-	@echo "Building Docker images (version: $(VERSION))..."
-	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build cli
-	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build indexer api
-	@echo "Build completed (version: $(VERSION))."
+# Pull images from DigitalOcean registry
+pull:
+	@echo "Pulling Docker images (version: $(VERSION))..."
+	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml pull indexer api cli
+	@echo "Pull completed (version: $(VERSION))."
 
-# Rebuild all Docker images without cache
-rebuild:
-	@echo "Rebuilding Docker images without cache (version: $(VERSION))..."
-	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build --no-cache cli
-	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml build --no-cache indexer api
-	@echo "Rebuild completed (version: $(VERSION))."
-
-# Full deployment: stop, rebuild, clean old images, and start
-deploy: stop rebuild clean-images start
+# Full deployment: stop, pull new images, clean old images, and start
+deploy: stop pull clean-images start
 	@echo "Deployment completed (version: $(VERSION))."
 
 # Start all services
@@ -64,9 +56,8 @@ sql-cli:
 # Show help
 help:
 	@echo "Available commands:"
-	@echo "  make build         - Build all Docker images (version: $(VERSION))"
-	@echo "  make rebuild       - Force rebuild without cache (version: $(VERSION))"
-	@echo "  make deploy        - Full deployment: stop, rebuild, clean, start (version: $(VERSION))"
+	@echo "  make pull          - Pull images from registry (version: $(VERSION))"
+	@echo "  make deploy        - Full deployment: stop, pull, clean, start (version: $(VERSION))"
 	@echo "  make start         - Start all services (db, indexer, api, cli)"
 	@echo "  make stop          - Stop all services"
 	@echo "  make restart       - Restart all services (stop + start)"
