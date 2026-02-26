@@ -203,8 +203,14 @@ pub async fn get_positions(
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserPositionHistoryQuery {
+    /// The user's wallet address.
     pub address: String,
+    /// Optional market ID to filter by a single market. When omitted, returns
+    /// the aggregated position across all markets.
     pub market_id: Option<String>,
+    /// Time window for the chart. Determines both the date range and the bucket
+    /// granularity: `1m` uses hourly buckets, `3m`, `1y` and `all` use daily
+    /// buckets. Each bucket contains the last snapshot value in that period.
     pub timeframe: Timeframe,
 }
 
@@ -212,10 +218,22 @@ pub struct UserPositionHistoryQuery {
     get,
     path = "/lending/history/user-positions",
     tag = "History",
+    summary = "Get user position history",
+    description = "Returns time-series data for charting a user's lending position value over time.\n\n\
+        Each data point represents the last snapshot in a time bucket (hourly or daily, \
+        depending on the timeframe). When no `market_id` is provided, values are summed \
+        across all markets the user has positions in.\n\n\
+        **Timeframe options:**\n\
+        | Value | Range | Bucket size |\n\
+        |-------|-------|-------------|\n\
+        | `1m`  | Last 30 days | 1 hour |\n\
+        | `3m`  | Last 90 days | 1 day |\n\
+        | `1y`  | Last 365 days | 1 day |\n\
+        | `all` | All time | 1 day |",
     params(UserPositionHistoryQuery),
     responses(
-        (status = 200, description = "User position history for charting", body = Vec<UserPositionHistoryPoint>),
-        (status = 400, description = "Invalid query parameters"),
+        (status = 200, description = "Time-series of position values bucketed by the requested timeframe", body = Vec<UserPositionHistoryPoint>),
+        (status = 400, description = "Invalid query parameters — address is empty or market_id is blank"),
         (status = 500, description = "Internal server error")
     )
 )]

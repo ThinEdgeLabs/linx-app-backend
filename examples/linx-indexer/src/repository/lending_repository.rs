@@ -227,17 +227,17 @@ impl LendingRepository {
         let results = if let Some(market_id) = market_id {
             // Use DISTINCT ON to pick the last snapshot per bucket (closest to bucket end)
             diesel::sql_query(format!(
-                "SELECT bucket, supply_amount_usd, borrow_amount_usd \
+                "SELECT timestamp, supply_amount_usd, borrow_amount_usd \
                  FROM ( \
                      SELECT DISTINCT ON (date_trunc('{0}', timestamp)) \
-                            date_trunc('{0}', timestamp) as bucket, \
+                            date_trunc('{0}', timestamp) as timestamp, \
                             supply_amount_usd, \
                             borrow_amount_usd \
                      FROM lending_position_snapshots \
                      WHERE address = $1 AND market_id = $2 AND timestamp >= $3 \
                      ORDER BY date_trunc('{0}', timestamp), timestamp DESC \
                  ) sub \
-                 ORDER BY bucket ASC",
+                 ORDER BY timestamp ASC",
                 bucket_interval
             ))
             .bind::<diesel::sql_types::Text, _>(address)
@@ -248,7 +248,7 @@ impl LendingRepository {
         } else {
             // For all markets: pick last snapshot per (bucket, market), then SUM across markets
             diesel::sql_query(format!(
-                "SELECT ts as bucket, \
+                "SELECT ts as timestamp, \
                         SUM(supply_amount_usd) as supply_amount_usd, \
                         SUM(borrow_amount_usd) as borrow_amount_usd \
                  FROM ( \

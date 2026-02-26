@@ -187,8 +187,8 @@ impl Timeframe {
 
     pub fn bucket_interval(&self) -> &'static str {
         match self {
-            Timeframe::OneMonth | Timeframe::ThreeMonths => "hour",
-            Timeframe::OneYear | Timeframe::All => "day",
+            Timeframe::OneMonth => "hour",
+            Timeframe::ThreeMonths | Timeframe::OneYear | Timeframe::All => "day",
         }
     }
 }
@@ -197,7 +197,7 @@ impl Timeframe {
 pub struct UserPositionHistoryPoint {
     #[diesel(sql_type = Timestamp)]
     #[schema(value_type = String)]
-    pub bucket: NaiveDateTime,
+    pub timestamp: NaiveDateTime,
     #[diesel(sql_type = Numeric)]
     #[schema(value_type = String)]
     pub supply_amount_usd: BigDecimal,
@@ -245,11 +245,11 @@ mod tests {
     #[test]
     fn test_bucket_interval_hourly() {
         assert_eq!(Timeframe::OneMonth.bucket_interval(), "hour");
-        assert_eq!(Timeframe::ThreeMonths.bucket_interval(), "hour");
     }
 
     #[test]
     fn test_bucket_interval_daily() {
+        assert_eq!(Timeframe::ThreeMonths.bucket_interval(), "day");
         assert_eq!(Timeframe::OneYear.bucket_interval(), "day");
         assert_eq!(Timeframe::All.bucket_interval(), "day");
     }
