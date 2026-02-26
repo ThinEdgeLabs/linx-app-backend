@@ -55,3 +55,16 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_CLI }}:latest
           cache-from: type=gha,scope=cli
           cache-to: type=gha,mode=max,scope=cli
+
+      - name: Delete old image tags (keep latest 5)
+        run: |
+          for repo in ${{ env.IMAGE_BACKEND }} ${{ env.IMAGE_CLI }}; do
+            tags=$(doctl registry repository list-tags "$repo" --format Tag,UpdatedAt --no-header | grep -v '^latest' | sort -k2 -r | tail -n +6 | awk '{print $1}')
+            for tag in $tags; do
+              echo "Deleting $repo:$tag"
+              doctl registry repository delete-tag "$repo" --tag "$tag" --force
+            done
+          done
+
+      - name: Run registry garbage collection
+        run: doctl registry garbage-collection start --include-untagged-manifests --force linx-labs
