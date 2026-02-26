@@ -122,7 +122,7 @@ fn default_calculation_time() -> String {
 }
 
 fn default_signup_bonus() -> i32 {
-    1000  // Default 1000 points signup bonus
+    1000 // Default 1000 points signup bonus
 }
 
 #[derive(Args)]

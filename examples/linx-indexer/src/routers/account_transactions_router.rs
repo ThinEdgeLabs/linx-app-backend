@@ -60,18 +60,14 @@ pub async fn get_account_transactions_handler(
         None => return Err(AppError::BadRequest("Missing parameter address".to_string())),
     };
 
-    let cursor = query.cursor.and_then(|millis| {
-        DateTime::from_timestamp_millis(millis).map(|dt| dt.naive_utc())
-    });
+    let cursor = query.cursor.and_then(|millis| DateTime::from_timestamp_millis(millis).map(|dt| dt.naive_utc()));
 
     let account_tx_repo = AccountTransactionRepository::new(state.db.clone());
 
-    let transactions =
-        account_tx_repo.get_account_transactions(&address, query.limit, cursor).await?;
+    let transactions = account_tx_repo.get_account_transactions(&address, query.limit, cursor).await?;
 
     // Convert to flattened format
-    let flattened: Vec<AccountTransactionFlattened> =
-        transactions.into_iter().map(|tx| tx.into()).collect();
+    let flattened: Vec<AccountTransactionFlattened> = transactions.into_iter().map(|tx| tx.into()).collect();
 
     Ok(Json(flattened))
 }

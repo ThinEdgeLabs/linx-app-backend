@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use bento_core::{ProcessorFactory, db::DbPool};
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
-    BlockAndEvents, CustomProcessorOutput, RichBlockEntry, Transaction,
-    processors::ProcessorOutput, utils::timestamp_millis_to_naive_datetime,
+    BlockAndEvents, CustomProcessorOutput, RichBlockEntry, Transaction, processors::ProcessorOutput,
+    utils::timestamp_millis_to_naive_datetime,
 };
 
 use crate::{
@@ -27,10 +27,7 @@ pub fn processor_factory() -> ProcessorFactory {
 }
 
 impl ContractCallProcessor {
-    pub fn new(
-        connection_pool: Arc<DbPool>,
-        _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
-    ) -> Self {
+    pub fn new(connection_pool: Arc<DbPool>, _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>) -> Self {
         tracing::debug!("Initialized ContractCallProcessor");
         let repository = AccountTransactionRepository::new(connection_pool.clone());
         let classifier = TransactionClassifier::new(HashSet::new());
@@ -91,9 +88,7 @@ impl ProcessorTrait for ContractCallProcessor {
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
         if let ProcessorOutput::Custom(custom) = output {
-            if let Some(contract_call_output) =
-                custom.as_any().downcast_ref::<ContractCallProcessorOutput>()
-            {
+            if let Some(contract_call_output) = custom.as_any().downcast_ref::<ContractCallProcessorOutput>() {
                 let contract_calls = &contract_call_output.contract_calls;
                 if !contract_calls.is_empty() {
                     self.repository.insert_transactions(contract_calls).await?;
@@ -110,10 +105,7 @@ impl ProcessorTrait for ContractCallProcessor {
     }
 }
 
-pub fn extract_contract_call(
-    tx: &Transaction,
-    block: &RichBlockEntry,
-) -> Option<NewAccountTransaction> {
+pub fn extract_contract_call(tx: &Transaction, block: &RichBlockEntry) -> Option<NewAccountTransaction> {
     // NOTE: Choosing the first input is possibly not the best approach.
     // Also if the transaction has no inputs we cannot identify the sender.
     let address = tx.unsigned.inputs.first().map(|input| &input.address);
@@ -123,9 +115,7 @@ pub fn extract_contract_call(
         return None;
     }
 
-    let contract_call_details = ContractCallDetails {
-        contract_address: contract_address.unwrap().to_string(),
-    };
+    let contract_call_details = ContractCallDetails { contract_address: contract_address.unwrap().to_string() };
 
     let details_json = serde_json::to_value(&contract_call_details).ok()?;
 

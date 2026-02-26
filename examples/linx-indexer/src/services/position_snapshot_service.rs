@@ -20,12 +20,7 @@ impl PositionSnapshotService {
         Self { lending_repository: LendingRepository::new(db_pool), client, token_service }
     }
 
-    pub async fn generate_snapshots(
-        &self,
-        linx_address: &str,
-        linx_group: u32,
-    ) -> anyhow::Result<()> {
-
+    pub async fn generate_snapshots(&self, linx_address: &str, linx_group: u32) -> anyhow::Result<()> {
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
             tracing::info!("Calculating position snapshots for market {}", market.id);
@@ -58,10 +53,7 @@ impl PositionSnapshotService {
                 }
             };
 
-            let market_state = match self
-                .get_market_state(&market.id, linx_address, linx_group)
-                .await
-            {
+            let market_state = match self.get_market_state(&market.id, linx_address, linx_group).await {
                 Ok(state) => state,
                 Err(e) => {
                     tracing::error!("Failed to fetch market state for market {}: {}", market.id, e);
@@ -72,10 +64,8 @@ impl PositionSnapshotService {
             let mut page = 1;
             let page_size = 100;
             loop {
-                let positions = self
-                    .lending_repository
-                    .get_positions(Some(market.id.clone()), None, page, page_size)
-                    .await?;
+                let positions =
+                    self.lending_repository.get_positions(Some(market.id.clone()), None, page, page_size).await?;
 
                 if positions.is_empty() {
                     break;
@@ -89,8 +79,7 @@ impl PositionSnapshotService {
                     let raw_supply_amount = if position.supply_shares.is_zero() {
                         BigDecimal::from(0)
                     } else {
-                        (position.supply_shares
-                            * (&market_state.total_supply_assets + VIRTUAL_ASSETS)
+                        (position.supply_shares * (&market_state.total_supply_assets + VIRTUAL_ASSETS)
                             / (&market_state.total_supply_shares + VIRTUAL_SHARES))
                             .with_scale(0)
                     };
@@ -99,17 +88,14 @@ impl PositionSnapshotService {
                     let raw_borrow_amount = if position.borrow_shares.is_zero() {
                         BigDecimal::from(0)
                     } else {
-                        (position.borrow_shares
-                            * (&market_state.total_borrow_assets + VIRTUAL_ASSETS)
+                        (position.borrow_shares * (&market_state.total_borrow_assets + VIRTUAL_ASSETS)
                             / (&market_state.total_borrow_shares + VIRTUAL_SHARES))
                             .with_scale(0)
                     };
 
                     // Normalize the amounts using token decimals
-                    let normalized_supply_amount =
-                        token_info.convert_to_decimal(&raw_supply_amount);
-                    let normalized_borrow_amount =
-                        token_info.convert_to_decimal(&raw_borrow_amount);
+                    let normalized_supply_amount = token_info.convert_to_decimal(&raw_supply_amount);
+                    let normalized_borrow_amount = token_info.convert_to_decimal(&raw_borrow_amount);
 
                     // Calculate USD values (token_price is already normalized)
                     let supply_amount_usd = &normalized_supply_amount * &token_price;
@@ -177,9 +163,9 @@ impl PositionSnapshotService {
                 anyhow::bail!("Contract call failed for market {}", market_id);
             }
             CallContractResultType::CallContractSucceeded => {
-                let returns = result.returns.ok_or_else(|| {
-                    anyhow::anyhow!("No returns in contract call for market {}", market_id)
-                })?;
+                let returns = result
+                    .returns
+                    .ok_or_else(|| anyhow::anyhow!("No returns in contract call for market {}", market_id))?;
                 if returns.len() != 6 {
                     anyhow::bail!(
                         "Expected 6 return values for market {}, got {}, values: {}",
@@ -188,38 +174,27 @@ impl PositionSnapshotService {
                         serde_json::to_string(&returns).unwrap_or_default(),
                     );
                 }
-                let total_supply_assets =
-                    self.extract_bigdecimal_from_object(&returns[0]).with_context(|| {
-                        format!("Failed to extract total_supply_assets for market {}", market_id)
-                    })?;
+                let total_supply_assets = self
+                    .extract_bigdecimal_from_object(&returns[0])
+                    .with_context(|| format!("Failed to extract total_supply_assets for market {}", market_id))?;
 
-                let total_supply_shares =
-                    self.extract_bigdecimal_from_object(&returns[1]).with_context(|| {
-                        format!("Failed to extract total_supply_shares for market {}", market_id)
-                    })?;
+                let total_supply_shares = self
+                    .extract_bigdecimal_from_object(&returns[1])
+                    .with_context(|| format!("Failed to extract total_supply_shares for market {}", market_id))?;
 
-                let total_borrow_assets =
-                    self.extract_bigdecimal_from_object(&returns[2]).with_context(|| {
-                        format!("Failed to extract total_borrow_assets for market {}", market_id)
-                    })?;
+                let total_borrow_assets = self
+                    .extract_bigdecimal_from_object(&returns[2])
+                    .with_context(|| format!("Failed to extract total_borrow_assets for market {}", market_id))?;
 
-                let total_borrow_shares =
-                    self.extract_bigdecimal_from_object(&returns[3]).with_context(|| {
-                        format!("Failed to extract total_borrow_shares for market {}", market_id)
-                    })?;
+                let total_borrow_shares = self
+                    .extract_bigdecimal_from_object(&returns[3])
+                    .with_context(|| format!("Failed to extract total_borrow_shares for market {}", market_id))?;
 
                 let timestamp = self
                     .extract_bigdecimal_from_object(&returns[4])
-                    .with_context(|| {
-                        format!("Failed to extract timestamp for market {}", market_id)
-                    })?
+                    .with_context(|| format!("Failed to extract timestamp for market {}", market_id))?
                     .to_i64()
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Failed to convert timestamp to i64 for market {}",
-                            market_id
-                        )
-                    })?;
+                    .ok_or_else(|| anyhow::anyhow!("Failed to convert timestamp to i64 for market {}", market_id))?;
                 let last_update = timestamp_millis_to_naive_datetime(timestamp);
                 let fee = self.extract_bigdecimal_from_object(&returns[5]).unwrap_or_default();
 
@@ -235,11 +210,7 @@ impl PositionSnapshotService {
         }
     }
 
-    pub async fn run_scheduler(
-        &self,
-        linx_address: &str,
-        linx_group: u32,
-    ) -> anyhow::Result<()> {
+    pub async fn run_scheduler(&self, linx_address: &str, linx_group: u32) -> anyhow::Result<()> {
         let interval = tokio::time::Duration::from_secs(300); // 5 minutes
         let mut interval_timer = tokio::time::interval(interval);
 
@@ -254,10 +225,7 @@ impl PositionSnapshotService {
         }
     }
 
-    fn extract_bigdecimal_from_object(
-        &self,
-        value: &serde_json::Value,
-    ) -> anyhow::Result<BigDecimal> {
+    fn extract_bigdecimal_from_object(&self, value: &serde_json::Value) -> anyhow::Result<BigDecimal> {
         value
             .as_object()
             .and_then(|obj| obj.get("value"))

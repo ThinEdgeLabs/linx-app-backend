@@ -28,9 +28,7 @@ async fn main() -> anyhow::Result<()> {
             );
             let client = bento_core::Client::new(network);
             let snapshot_service = PositionSnapshotService::new(db_pool, client, token_service);
-            snapshot_service
-                .generate_snapshots(&app_config.linx_address, app_config.linx_group)
-                .await?;
+            snapshot_service.generate_snapshots(&app_config.linx_address, app_config.linx_group).await?;
         }
         (Some("positions"), Some("daemon")) => {
             let token_service = TokenService::new(

@@ -65,11 +65,8 @@ pub async fn submit_swap_handler(
     validate_request(&request)?;
 
     // 2. Submit to blockchain
-    let submit_result = state
-        .node_client
-        .submit_transaction(&request.unsigned_tx, &request.signature)
-        .await
-        .map_err(|e| {
+    let submit_result =
+        state.node_client.submit_transaction(&request.unsigned_tx, &request.signature).await.map_err(|e| {
             tracing::error!("Blockchain submission failed: {}", e);
             AppError::Internal(anyhow::anyhow!("Failed to submit transaction: {}", e))
         })?;
@@ -77,10 +74,8 @@ pub async fn submit_swap_handler(
     // 3. Track in database (only on successful blockchain submission)
     let linx_tx_repo = LinxTransactionsRepository::new(state.db.clone());
 
-    let new_transaction = NewLinxTransaction {
-        tx_id: submit_result.tx_id.clone(),
-        user_address: request.user_address.clone(),
-    };
+    let new_transaction =
+        NewLinxTransaction { tx_id: submit_result.tx_id.clone(), user_address: request.user_address.clone() };
 
     linx_tx_repo
         .insert_linx_transaction(new_transaction)
@@ -95,11 +90,7 @@ pub async fn submit_swap_handler(
         })
         .ok();
 
-    tracing::info!(
-        "Successfully submitted swap tx {} for user {}",
-        submit_result.tx_id,
-        request.user_address
-    );
+    tracing::info!("Successfully submitted swap tx {} for user {}", submit_result.tx_id, request.user_address);
 
     Ok(Json(SubmitSwapResponse {
         tx_id: submit_result.tx_id,

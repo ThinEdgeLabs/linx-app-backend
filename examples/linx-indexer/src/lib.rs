@@ -16,15 +16,13 @@ pub mod services;
 /// Register all custom processor factories
 pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {
     let mut processor_factories = HashMap::new();
-    processor_factories
-        .insert("transfers".to_string(), processors::transfer_processor::processor_factory());
+    processor_factories.insert("transfers".to_string(), processors::transfer_processor::processor_factory());
     // processor_factories.insert(
     //     "contract_calls".to_string(),
     //     processors::contract_call_processor::processor_factory(),
     // );
     processor_factories.insert("dex".to_string(), processors::dex_processor::processor_factory());
-    processor_factories
-        .insert("lending".to_string(), processors::lending_processor::processor_factory());
+    processor_factories.insert("lending".to_string(), processors::lending_processor::processor_factory());
     processor_factories
 }
 
@@ -70,10 +68,7 @@ pub fn bin_to_hex(bin: &[u8]) -> String {
     bin.iter().map(|byte| format!("{:02x}", byte)).collect()
 }
 
-pub fn extract_bigdecimal_from_object(
-    json: &serde_json::Value,
-    key: &str,
-) -> anyhow::Result<BigDecimal> {
+pub fn extract_bigdecimal_from_object(json: &serde_json::Value, key: &str) -> anyhow::Result<BigDecimal> {
     json.as_object()
         .and_then(|obj| obj.get(key))
         .and_then(|v| v.as_str())

@@ -23,10 +23,7 @@ impl LendingRouter {
             .route("/lending/v1/borrow-activity", get(get_borrow_activity))
             .route("/lending/v1/earn-activity", get(get_earn_activity))
             .route("/lending/v1/positions", get(get_positions))
-            .route(
-                "/lending/v1/history/user-positions",
-                get(get_user_position_history),
-            )
+            .route("/lending/v1/history/user-positions", get(get_user_position_history))
     }
 }
 
@@ -126,9 +123,8 @@ pub async fn get_borrow_activity(
         String::from("SupplyCollateral"),
         String::from("WithdrawCollateral"),
     ];
-    let borrow_activity = lending_repo
-        .get_activity(query.market_id, &borrow_events, query.address, query.page, query.limit)
-        .await?;
+    let borrow_activity =
+        lending_repo.get_activity(query.market_id, &borrow_events, query.address, query.page, query.limit).await?;
 
     Ok(Json(borrow_activity))
 }
@@ -158,9 +154,8 @@ pub async fn get_earn_activity(
 
     let lending_repo = LendingRepository::new(state.db.clone());
     let earn_events = [String::from("Supply"), String::from("Withdraw")];
-    let earn_activity = lending_repo
-        .get_activity(query.market_id, &earn_events, query.address, query.page, query.limit)
-        .await?;
+    let earn_activity =
+        lending_repo.get_activity(query.market_id, &earn_events, query.address, query.page, query.limit).await?;
 
     Ok(Json(earn_activity))
 }
@@ -189,14 +184,11 @@ pub async fn get_positions(
     }
 
     if query.market_id.is_none() && query.address.is_none() {
-        return Err(AppError::BadRequest(
-            "Either market_id or address must be provided".to_string(),
-        ));
+        return Err(AppError::BadRequest("Either market_id or address must be provided".to_string()));
     }
 
     let lending_repo = LendingRepository::new(state.db.clone());
-    let positions =
-        lending_repo.get_positions(query.market_id, query.address, query.page, query.limit).await?;
+    let positions = lending_repo.get_positions(query.market_id, query.address, query.page, query.limit).await?;
 
     Ok(Json(positions))
 }
@@ -248,19 +240,12 @@ pub async fn get_user_position_history(
     if let Some(ref mid) = query.market_id
         && mid.trim().is_empty()
     {
-        return Err(AppError::BadRequest(
-            "market_id cannot be blank".to_string(),
-        ));
+        return Err(AppError::BadRequest("market_id cannot be blank".to_string()));
     }
 
     let lending_repo = LendingRepository::new(state.db.clone());
-    let history = lending_repo
-        .get_user_position_history(
-            &query.address,
-            query.market_id.as_deref(),
-            query.timeframe,
-        )
-        .await?;
+    let history =
+        lending_repo.get_user_position_history(&query.address, query.market_id.as_deref(), query.timeframe).await?;
 
     Ok(Json(history))
 }

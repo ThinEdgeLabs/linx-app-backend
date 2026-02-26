@@ -36,9 +36,7 @@ use tokio_tungstenite::{
 pub struct WsClient;
 
 impl WsClient {
-    pub async fn connect_async(
-        url: &str,
-    ) -> Result<(ConnectionState<MaybeTlsStream<TcpStream>>, Response), Error> {
+    pub async fn connect_async(url: &str) -> Result<(ConnectionState<MaybeTlsStream<TcpStream>>, Response), Error> {
         let (socket, response) = connect_async(url).await?;
         Ok((ConnectionState::new(socket), response))
     }
@@ -55,11 +53,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> ConnectionState<T> {
     }
 
     async fn send(&mut self, method: &str, params: impl IntoIterator<Item = &str>) -> u64 {
-        let mut params_str: String = params
-            .into_iter()
-            .map(|param| format!("\"{}\"", param))
-            .collect::<Vec<String>>()
-            .join(",");
+        let mut params_str: String =
+            params.into_iter().map(|param| format!("\"{}\"", param)).collect::<Vec<String>>().join(",");
 
         if !params_str.is_empty() {
             params_str = format!("\"params\": [{params}],", params = params_str)
@@ -68,12 +63,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> ConnectionState<T> {
         let id: u64 = self.id;
         self.id += 1;
 
-        let s: String = format!(
-            "{{\"method\":\"{method}\",{params}\"id\":{id}}}",
-            method = method,
-            params = params_str,
-            id = id
-        );
+        let s: String =
+            format!("{{\"method\":\"{method}\",{params}\"id\":{id}}}", method = method, params = params_str, id = id);
         let message = Message::Text(s.into());
 
         self.socket.send(message).await.unwrap();

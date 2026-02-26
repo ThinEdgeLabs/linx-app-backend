@@ -14,7 +14,6 @@ async fn main() -> anyhow::Result<()> {
     let app_config = AppConfig::from_env()?;
     let app_config_arc = Some(Arc::new(app_config) as Arc<dyn bento_types::config::AppConfigTrait>);
 
-
     let database_url = get_database_url().expect("DATABASE_URL must be set in environment");
     let db_pool = new_db_pool(&database_url, None).await?;
 
@@ -53,10 +52,7 @@ async fn main() -> anyhow::Result<()> {
             }
 
             for gap in &report.block_gaps {
-                println!(
-                    "Chain ({}, {}): {} missing heights",
-                    gap.chain_from, gap.chain_to, gap.total_missing
-                );
+                println!("Chain ({}, {}): {} missing heights", gap.chain_from, gap.chain_to, gap.total_missing);
                 if gap.total_missing <= 20 {
                     println!("  Heights: {:?}", gap.missing_heights);
                 } else {

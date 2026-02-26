@@ -33,10 +33,7 @@ pub struct DexProcessor {
 }
 
 impl DexProcessor {
-    pub fn new(
-        connection_pool: Arc<DbPool>,
-        _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
-    ) -> Self {
+    pub fn new(connection_pool: Arc<DbPool>, _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>) -> Self {
         let swap_repository = AccountTransactionRepository::new(connection_pool.clone());
         let pool_repository = PoolRepository::new(connection_pool.clone());
 
@@ -50,12 +47,8 @@ impl DexProcessor {
     /// Parse pool creation event for different DEX factories
     fn parse_pool_creation_event(&self, event: &ContractEventByBlockHash) -> Option<NewPoolDto> {
         match event.contract_address.as_str() {
-            AYIN_V2_FACTORY_ADDRESS if event.event_index == 0 => {
-                self.parse_ayin_v2_pool_event(event)
-            }
-            ELEXIUM_FACTORY_ADDRESS if event.event_index == 0 => {
-                self.parse_elexium_pool_event(event)
-            }
+            AYIN_V2_FACTORY_ADDRESS if event.event_index == 0 => self.parse_ayin_v2_pool_event(event),
+            ELEXIUM_FACTORY_ADDRESS if event.event_index == 0 => self.parse_elexium_pool_event(event),
             _ => None,
         }
     }
@@ -63,10 +56,7 @@ impl DexProcessor {
     /// Parse Ayin V2 pool creation event
     fn parse_ayin_v2_pool_event(&self, event: &ContractEventByBlockHash) -> Option<NewPoolDto> {
         if event.fields.len() < 4 {
-            tracing::warn!(
-                "Ayin V2 pool creation event has insufficient fields: {}",
-                event.fields.len()
-            );
+            tracing::warn!("Ayin V2 pool creation event has insufficient fields: {}", event.fields.len());
             return None;
         }
 
@@ -74,12 +64,7 @@ impl DexProcessor {
         let token_b = self.extract_string_field(&event.fields, 1)?;
         let contract_id = self.extract_string_field(&event.fields, 2)?;
 
-        tracing::debug!(
-            "Parsed Ayin V2 pool: token_a={}, token_b={}, contract_id={}",
-            token_a,
-            token_b,
-            contract_id
-        );
+        tracing::debug!("Parsed Ayin V2 pool: token_a={}, token_b={}, contract_id={}", token_a, token_b, contract_id);
 
         Some(NewPoolDto {
             address: address_from_contract_id(&contract_id),
@@ -92,10 +77,7 @@ impl DexProcessor {
     /// Parse Elexium pool creation event
     fn parse_elexium_pool_event(&self, event: &ContractEventByBlockHash) -> Option<NewPoolDto> {
         if event.fields.len() < 5 {
-            tracing::warn!(
-                "Elexium pool creation event has insufficient fields: {}",
-                event.fields.len()
-            );
+            tracing::warn!("Elexium pool creation event has insufficient fields: {}", event.fields.len());
             return None;
         }
 
@@ -103,12 +85,7 @@ impl DexProcessor {
         let token_b = self.extract_string_field(&event.fields, 1)?;
         let contract_id = self.extract_string_field(&event.fields, 3)?;
 
-        tracing::debug!(
-            "Parsed Elexium pool: token_a={}, token_b={}, contract_id={}",
-            token_a,
-            token_b,
-            contract_id
-        );
+        tracing::debug!("Parsed Elexium pool: token_a={}, token_b={}, contract_id={}", token_a, token_b, contract_id);
 
         Some(NewPoolDto {
             address: address_from_contract_id(&contract_id),
@@ -118,17 +95,10 @@ impl DexProcessor {
         })
     }
 
-    fn extract_swaps(
-        &self,
-        bwe: &BlockAndEvents,
-        pools: &HashMap<String, Pool>,
-    ) -> Vec<(i32, NewAccountTransaction)> {
+    fn extract_swaps(&self, bwe: &BlockAndEvents, pools: &HashMap<String, Pool>) -> Vec<(i32, NewAccountTransaction)> {
         bwe.events
             .iter()
-            .filter_map(|event| {
-                self.parse_swap_event(event, pools, &bwe.block)
-                    .map(|swap| (event.event_index, swap))
-            })
+            .filter_map(|event| self.parse_swap_event(event, pools, &bwe.block).map(|swap| (event.event_index, swap)))
             .collect()
     }
 
@@ -279,11 +249,7 @@ impl DexProcessor {
         fields.get(index)?.value.as_str().map(|s| s.to_string())
     }
 
-    fn extract_bigdecimal_field(
-        &self,
-        fields: &[EventField],
-        index: usize,
-    ) -> Option<bigdecimal::BigDecimal> {
+    fn extract_bigdecimal_field(&self, fields: &[EventField], index: usize) -> Option<bigdecimal::BigDecimal> {
         fields.get(index)?.value.as_str().and_then(|s| s.parse().ok())
     }
 
@@ -335,11 +301,7 @@ impl DexProcessor {
                 result.push(swap_list.into_iter().next().unwrap().1);
             } else {
                 // Multiple swaps - sort by event_index and create chain
-                tracing::info!(
-                    "Multi-hop swap detected for tx_id {}: {} swaps before sorting",
-                    tx_id,
-                    swap_list.len()
-                );
+                tracing::info!("Multi-hop swap detected for tx_id {}: {} swaps before sorting", tx_id, swap_list.len());
 
                 for (idx, (event_index, swap)) in swap_list.iter().enumerate() {
                     if let Some(swap_details) = self.get_swap_details(swap) {
@@ -373,8 +335,7 @@ impl DexProcessor {
                     }
                 }
 
-                let swaps: Vec<NewAccountTransaction> =
-                    swap_list.into_iter().map(|(_, swap)| swap).collect();
+                let swaps: Vec<NewAccountTransaction> = swap_list.into_iter().map(|(_, swap)| swap).collect();
 
                 let hop_count = swaps.len() as i32;
                 let first_swap = &swaps[0];
@@ -387,8 +348,7 @@ impl DexProcessor {
                 // Detect if this is a split swap (same token pair) or multi-hop
                 let is_split_swap = swaps.iter().all(|s| {
                     if let Some(details) = self.get_swap_details(s) {
-                        details.token_in == first_details.token_in
-                            && details.token_out == first_details.token_out
+                        details.token_in == first_details.token_in && details.token_out == first_details.token_out
                     } else {
                         false
                     }
@@ -396,12 +356,10 @@ impl DexProcessor {
 
                 let aggregated = if is_split_swap {
                     // Split swap: same token pair, sum amounts
-                    let swap_details_list: Vec<SwapDetails> = swaps.iter()
-                        .filter_map(|s| self.get_swap_details(s))
-                        .collect();
+                    let swap_details_list: Vec<SwapDetails> =
+                        swaps.iter().filter_map(|s| self.get_swap_details(s)).collect();
 
-                    let total_amount_in: bigdecimal::BigDecimal =
-                        swap_details_list.iter().map(|s| &s.amount_in).sum();
+                    let total_amount_in: bigdecimal::BigDecimal = swap_details_list.iter().map(|s| &s.amount_in).sum();
                     let total_amount_out: bigdecimal::BigDecimal =
                         swap_details_list.iter().map(|s| &s.amount_out).sum();
 
@@ -434,9 +392,8 @@ impl DexProcessor {
                         &last_details.token_out[..8]
                     );
 
-                    let swap_details_list: Vec<SwapDetails> = swaps.iter()
-                        .filter_map(|s| self.get_swap_details(s))
-                        .collect();
+                    let swap_details_list: Vec<SwapDetails> =
+                        swaps.iter().filter_map(|s| self.get_swap_details(s)).collect();
                     let pool_addresses: Vec<String> =
                         swap_details_list.iter().map(|s| s.pool_address.clone()).collect();
 
@@ -502,8 +459,7 @@ impl ProcessorTrait for DexProcessor {
 
         for block_events in &bwe {
             let block_pools = self.extract_new_pools(&block_events.events);
-            existing_pools
-                .extend(block_pools.iter().map(|p| (p.address.clone(), Pool::from(p.clone()))));
+            existing_pools.extend(block_pools.iter().map(|p| (p.address.clone(), Pool::from(p.clone()))));
             new_pools.extend(block_pools);
 
             let block_swaps = self.extract_swaps(block_events, &existing_pools);
@@ -520,25 +476,23 @@ impl ProcessorTrait for DexProcessor {
             processed_swaps.len()
         );
 
-        Ok(ProcessorOutput::Custom(Arc::new(DexProcessorOutput {
-            new_pools,
-            swaps: processed_swaps,
-        })))
+        Ok(ProcessorOutput::Custom(Arc::new(DexProcessorOutput { new_pools, swaps: processed_swaps })))
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
         if let ProcessorOutput::Custom(custom) = output
-            && let Some(dex_output) = custom.as_any().downcast_ref::<DexProcessorOutput>() {
-                if !dex_output.new_pools.is_empty() {
-                    self.pool_repository.insert_pools(&dex_output.new_pools).await?;
-                    tracing::info!("Inserted {} new pools", dex_output.new_pools.len());
-                }
-
-                if !dex_output.swaps.is_empty() {
-                    self.swap_repository.insert_transactions(&dex_output.swaps).await?;
-                    tracing::info!("Inserted {} swaps", dex_output.swaps.len());
-                }
+            && let Some(dex_output) = custom.as_any().downcast_ref::<DexProcessorOutput>()
+        {
+            if !dex_output.new_pools.is_empty() {
+                self.pool_repository.insert_pools(&dex_output.new_pools).await?;
+                tracing::info!("Inserted {} new pools", dex_output.new_pools.len());
             }
+
+            if !dex_output.swaps.is_empty() {
+                self.swap_repository.insert_transactions(&dex_output.swaps).await?;
+                tracing::info!("Inserted {} swaps", dex_output.swaps.len());
+            }
+        }
         Ok(())
     }
 }

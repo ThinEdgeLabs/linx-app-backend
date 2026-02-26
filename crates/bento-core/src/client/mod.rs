@@ -15,7 +15,7 @@ pub use transaction::SubmitTxResponse;
 pub struct Client {
     inner: reqwest_middleware::ClientWithMiddleware, // The inner HTTP client used for requests.
     pub network: Network,                            // The network the client is connected to.
-    pub base_url: String, // The base URL for making requests to the node network.
+    pub base_url: String,                            // The base URL for making requests to the node network.
 }
 
 impl Client {

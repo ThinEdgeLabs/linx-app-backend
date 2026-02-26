@@ -86,16 +86,8 @@ async fn new_worker_from_config(
 
     let network = get_network()?;
 
-    let worker = Worker::new(
-        processors,
-        get_database_url()?,
-        network,
-        None,
-        sync_options,
-        backfill_options,
-        workers,
-    )
-    .await?;
+    let worker =
+        Worker::new(processors, get_database_url()?, network, None, sync_options, backfill_options, workers).await?;
     Ok(worker)
 }
 
@@ -155,13 +147,10 @@ pub async fn new_server_config_from_config(_config: &Config) -> Result<ServerCon
     let client = Arc::new(Client::new(network));
 
     let api_host = std::env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let api_port = std::env::var("API_PORT")
-        .unwrap_or_else(|_| "8080".to_string())
-        .parse()
-        .context("Invalid API_PORT value")?;
+    let api_port =
+        std::env::var("API_PORT").unwrap_or_else(|_| "8080".to_string()).parse().context("Invalid API_PORT value")?;
 
-    let server_config =
-        ServerConfig { db_client: db_pool, node_client: client, api_host, api_port };
+    let server_config = ServerConfig { db_client: db_pool, node_client: client, api_host, api_port };
     Ok(server_config)
 }
 
@@ -213,10 +202,7 @@ pub async fn run_command(
                 let server_config = new_server_config_from_config(&config).await?;
 
                 println!("Server is ready and running on http://{}", server_config.api_endpoint());
-                println!(
-                    "Swagger UI is available at http://{}/swagger-ui",
-                    server_config.api_endpoint()
-                );
+                println!("Swagger UI is available at http://{}/swagger-ui", server_config.api_endpoint());
 
                 start(server_config, router).await?;
             }
@@ -303,10 +289,8 @@ mod tests {
         let config_path = create_test_config_file(temp_dir.path(), config_content);
 
         // Create CLI args with the path to our test config
-        let args = CliArgs {
-            config_path: config_path.to_string_lossy().to_string(),
-            network: Some("testnet".to_string()),
-        };
+        let args =
+            CliArgs { config_path: config_path.to_string_lossy().to_string(), network: Some("testnet".to_string()) };
 
         let config: Config = args.clone().into();
 
@@ -329,10 +313,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Failed to read config file")]
     fn test_error_on_missing_config_file() {
-        let args = CliArgs {
-            config_path: "non_existent_config.toml".to_string(),
-            network: Some("testnet".to_string()),
-        };
+        let args =
+            CliArgs { config_path: "non_existent_config.toml".to_string(), network: Some("testnet".to_string()) };
 
         let _: Config = args.clone().into();
     }

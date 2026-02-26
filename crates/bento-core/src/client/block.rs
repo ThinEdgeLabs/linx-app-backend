@@ -1,7 +1,7 @@
 use bento_trait::stage::BlockProvider;
 use bento_types::{
-    BlockAndEvents, BlockEntry, BlockHashesResponse, BlockHeaderEntry,
-    BlocksAndEventsPerTimestampRange, BlocksPerTimestampRange, ChainInfo,
+    BlockAndEvents, BlockEntry, BlockHashesResponse, BlockHeaderEntry, BlocksAndEventsPerTimestampRange,
+    BlocksPerTimestampRange, ChainInfo,
 };
 
 use anyhow::Result;
@@ -30,11 +30,7 @@ impl BlockProvider for Client {
     /// # Returns
     ///
     /// A `Result` containing a `BlocksAndEventsPerTimestampRange` structure, or an error if the request fails.
-    async fn get_blocks_and_events(
-        &self,
-        from_ts: u64,
-        to_ts: u64,
-    ) -> Result<BlocksAndEventsPerTimestampRange> {
+    async fn get_blocks_and_events(&self, from_ts: u64, to_ts: u64) -> Result<BlocksAndEventsPerTimestampRange> {
         // Using the rich-blocks endpoint to get complete tx input data
         let endpoint = format!("blockflow/rich-blocks?fromTs={}&toTs={}", from_ts, to_ts);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
@@ -89,16 +85,8 @@ impl BlockProvider for Client {
         Ok(response)
     }
 
-    async fn get_block_hash_by_height(
-        &self,
-        height: u64,
-        from_group: u32,
-        to_group: u32,
-    ) -> Result<Vec<String>> {
-        let endpoint = format!(
-            "blockflow/hashes?height={}&fromGroup={}&toGroup={}",
-            height, from_group, to_group
-        );
+    async fn get_block_hash_by_height(&self, height: u64, from_group: u32, to_group: u32) -> Result<Vec<String>> {
+        let endpoint = format!("blockflow/hashes?height={}&fromGroup={}&toGroup={}", height, from_group, to_group);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let response = self.inner.get(url).send().await?;
         match response.error_for_status() {
@@ -106,15 +94,12 @@ impl BlockProvider for Client {
                 let json: BlockHashesResponse = res.json().await?;
                 Ok(json.headers)
             }
-            Err(err) => {
-                Err(anyhow::anyhow!("API returned error status: {}", err.status().unwrap()))
-            }
+            Err(err) => Err(anyhow::anyhow!("API returned error status: {}", err.status().unwrap())),
         }
     }
 
     async fn get_chain_info(&self, from_group: u32, to_group: u32) -> Result<ChainInfo> {
-        let endpoint =
-            format!("blockflow/chain-info?fromGroup={}&toGroup={}", from_group, to_group);
+        let endpoint = format!("blockflow/chain-info?fromGroup={}&toGroup={}", from_group, to_group);
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let response = self.inner.get(url).send().await?.json().await?;
         Ok(response)

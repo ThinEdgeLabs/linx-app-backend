@@ -136,12 +136,7 @@ impl GapDetectionService {
     /// * `worker` - Worker instance to use for backfilling
     /// * `min_height` - Optional minimum height to start gap detection from
     /// * `delay_ms` - Delay in milliseconds between each height to avoid overwhelming the node (default: 100ms)
-    pub async fn backfill_gaps(
-        &self,
-        worker: &Worker,
-        min_height: Option<i64>,
-        delay_ms: Option<u64>,
-    ) -> Result<()> {
+    pub async fn backfill_gaps(&self, worker: &Worker, min_height: Option<i64>, delay_ms: Option<u64>) -> Result<()> {
         use tokio::time::{Duration, sleep};
 
         let delay = Duration::from_millis(delay_ms.unwrap_or(100));
@@ -154,10 +149,7 @@ impl GapDetectionService {
         let mut height_to_chains: HashMap<u64, Vec<(u32, u32)>> = HashMap::new();
         for gap in &gaps {
             for &height in &gap.missing_heights {
-                height_to_chains
-                    .entry(height as u64)
-                    .or_default()
-                    .push((gap.chain_from as u32, gap.chain_to as u32));
+                height_to_chains.entry(height as u64).or_default().push((gap.chain_from as u32, gap.chain_to as u32));
             }
         }
 
@@ -190,11 +182,7 @@ impl GapDetectionService {
             match worker.sync_at_height(*height, Some(chains.clone())).await {
                 Ok(_) => {
                     success_count += 1;
-                    tracing::info!(
-                        "✓ Successfully backfilled height {} for {} chains",
-                        height,
-                        chains.len()
-                    );
+                    tracing::info!("✓ Successfully backfilled height {} for {} chains", height, chains.len());
                 }
                 Err(e) => {
                     failure_count += 1;
@@ -227,9 +215,7 @@ impl GapDetectionService {
         );
 
         if failure_count > 0 {
-            tracing::warn!(
-                "Some blocks failed to backfill. Re-run the command to retry failed blocks."
-            );
+            tracing::warn!("Some blocks failed to backfill. Re-run the command to retry failed blocks.");
         }
 
         Ok(())

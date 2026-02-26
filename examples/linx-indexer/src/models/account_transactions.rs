@@ -9,9 +9,7 @@ use utoipa::ToSchema;
 
 use crate::schema;
 
-#[derive(
-    Queryable, Selectable, Debug, Clone, Serialize, AsChangeset, PartialEq, Deserialize, ToSchema,
-)]
+#[derive(Queryable, Selectable, Debug, Clone, Serialize, AsChangeset, PartialEq, Deserialize, ToSchema)]
 #[diesel(table_name = schema::account_transactions)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct AccountTransaction {

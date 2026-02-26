@@ -30,10 +30,7 @@ impl AccountTransactionRepository {
 
     /// Generic insert method for any transaction type
     /// Uses ON CONFLICT DO NOTHING for idempotency
-    pub async fn insert_transactions(
-        &self,
-        transactions: &[NewAccountTransaction],
-    ) -> Result<()> {
+    pub async fn insert_transactions(&self, transactions: &[NewAccountTransaction]) -> Result<()> {
         if transactions.is_empty() {
             return Ok(());
         }

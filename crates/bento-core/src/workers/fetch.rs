@@ -14,12 +14,7 @@ pub async fn fetch_parallel<T: BlockProvider + 'static>(
     let total_time = range.to_ts - range.from_ts;
     let chunk_size = total_time / num_workers as u64;
 
-    tracing::debug!(
-        "Starting parallel fetch with {} workers for range {}-{}",
-        num_workers,
-        range.from_ts,
-        range.to_ts
-    );
+    tracing::debug!("Starting parallel fetch with {} workers for range {}-{}", num_workers, range.from_ts, range.to_ts);
 
     let mut futures = FuturesOrdered::new();
 
@@ -48,8 +43,7 @@ pub async fn fetch_parallel<T: BlockProvider + 'static>(
                 results.push(batch);
             }
             Err(err) => {
-                let err_ctx =
-                    format!("Failed to fetch chunk (worker {}/{})", completed_workers, num_workers);
+                let err_ctx = format!("Failed to fetch chunk (worker {}/{})", completed_workers, num_workers);
 
                 tracing::error!(
                     error = %err,
@@ -69,10 +63,7 @@ pub async fn fetch_parallel<T: BlockProvider + 'static>(
     Ok(results)
 }
 
-pub async fn fetch_chunk<T: BlockProvider + 'static>(
-    client: Arc<T>,
-    range: BlockRange,
-) -> Result<BlockBatch> {
+pub async fn fetch_chunk<T: BlockProvider + 'static>(client: Arc<T>, range: BlockRange) -> Result<BlockBatch> {
     if (range.to_ts - range.from_ts) > MAX_TIMESTAMP_RANGE {
         return Err(anyhow::anyhow!(
             "Timestamp range exceeds maximum limit, maximum {}, got {}",
@@ -160,60 +151,40 @@ mod tests {
 
         // Set expectations for each worker's range
         // Worker 0: 1000-2000
-        mock_client.expect_get_blocks_and_events().with(eq(1000), eq(2000)).times(1).returning(
-            |from_ts, to_ts| {
-                // Create a sample block for this range
-                let sample_block = create_test_block("hash1", from_ts);
-                let sample_block_and_events =
-                    BlockAndEvents { block: sample_block, events: vec![] };
+        mock_client.expect_get_blocks_and_events().with(eq(1000), eq(2000)).times(1).returning(|from_ts, to_ts| {
+            // Create a sample block for this range
+            let sample_block = create_test_block("hash1", from_ts);
+            let sample_block_and_events = BlockAndEvents { block: sample_block, events: vec![] };
 
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![sample_block_and_events]],
-                })
-            },
-        );
+            Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![sample_block_and_events]] })
+        });
 
         // Worker 1: 2000-3000
-        mock_client.expect_get_blocks_and_events().with(eq(2000), eq(3000)).times(1).returning(
-            |from_ts, to_ts| {
-                // Create a sample block for this range
-                let sample_block = create_test_block("hash2", from_ts);
-                let sample_block_and_events =
-                    BlockAndEvents { block: sample_block, events: vec![] };
+        mock_client.expect_get_blocks_and_events().with(eq(2000), eq(3000)).times(1).returning(|from_ts, to_ts| {
+            // Create a sample block for this range
+            let sample_block = create_test_block("hash2", from_ts);
+            let sample_block_and_events = BlockAndEvents { block: sample_block, events: vec![] };
 
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![sample_block_and_events]],
-                })
-            },
-        );
+            Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![sample_block_and_events]] })
+        });
 
         // Worker 2: 3000-4000
-        mock_client.expect_get_blocks_and_events().with(eq(3000), eq(4000)).times(1).returning(
-            |from_ts, to_ts| {
-                // Create a sample block for this range
-                let sample_block = create_test_block("hash3", from_ts);
-                let sample_block_and_events =
-                    BlockAndEvents { block: sample_block, events: vec![] };
+        mock_client.expect_get_blocks_and_events().with(eq(3000), eq(4000)).times(1).returning(|from_ts, to_ts| {
+            // Create a sample block for this range
+            let sample_block = create_test_block("hash3", from_ts);
+            let sample_block_and_events = BlockAndEvents { block: sample_block, events: vec![] };
 
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![sample_block_and_events]],
-                })
-            },
-        );
+            Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![sample_block_and_events]] })
+        });
 
         // Worker 3: 4000-5000
-        mock_client.expect_get_blocks_and_events().with(eq(4000), eq(5000)).times(1).returning(
-            |from_ts, to_ts| {
-                // Create a sample block for this range
-                let sample_block = create_test_block("hash4", from_ts);
-                let sample_block_and_events =
-                    BlockAndEvents { block: sample_block, events: vec![] };
+        mock_client.expect_get_blocks_and_events().with(eq(4000), eq(5000)).times(1).returning(|from_ts, to_ts| {
+            // Create a sample block for this range
+            let sample_block = create_test_block("hash4", from_ts);
+            let sample_block_and_events = BlockAndEvents { block: sample_block, events: vec![] };
 
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![sample_block_and_events]],
-                })
-            },
-        );
+            Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![sample_block_and_events]] })
+        });
 
         let client = Arc::new(mock_client);
 
@@ -225,13 +196,7 @@ mod tests {
         let batches = result.unwrap();
 
         // Check we have the correct number of batches
-        assert_eq!(
-            batches.len(),
-            num_workers,
-            "Expected {} batches, got {}",
-            num_workers,
-            batches.len()
-        );
+        assert_eq!(batches.len(), num_workers, "Expected {} batches, got {}", num_workers, batches.len());
 
         // Verify each batch covers the expected range
         let mut covered_from = from_ts;
@@ -249,8 +214,7 @@ mod tests {
             let expected_to = if i == num_workers - 1 {
                 range.to_ts
             } else {
-                range.from_ts
-                    + ((i as u64 + 1) * ((range.to_ts - range.from_ts) / num_workers as u64))
+                range.from_ts + ((i as u64 + 1) * ((range.to_ts - range.from_ts) / num_workers as u64))
             };
 
             assert_eq!(
@@ -282,18 +246,13 @@ mod tests {
         let mut mock_client = MockClient::new();
 
         // Worker 0: 1000-2000
-        mock_client.expect_get_blocks_and_events().with(eq(1000), eq(2000)).times(1).returning(
-            |from_ts, to_ts| {
-                // Create a sample block for this range
-                let sample_block = create_test_block("hash1", from_ts);
-                let sample_block_and_events =
-                    BlockAndEvents { block: sample_block, events: vec![] };
+        mock_client.expect_get_blocks_and_events().with(eq(1000), eq(2000)).times(1).returning(|from_ts, to_ts| {
+            // Create a sample block for this range
+            let sample_block = create_test_block("hash1", from_ts);
+            let sample_block_and_events = BlockAndEvents { block: sample_block, events: vec![] };
 
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![sample_block_and_events]],
-                })
-            },
-        );
+            Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![sample_block_and_events]] })
+        });
 
         // Worker 1: 2000-3000 - This one fails
         mock_client
@@ -311,8 +270,7 @@ mod tests {
         assert!(result.is_err(), "Expected error, got {:?}", result);
         let err_string = format!("{:#}", result.unwrap_err());
         assert!(
-            err_string.contains("Failed to fetch chunk")
-                && err_string.contains("Simulated worker failure"),
+            err_string.contains("Failed to fetch chunk") && err_string.contains("Simulated worker failure"),
             "Expected error message to contain both phrases, got: {}",
             err_string
         );
@@ -351,9 +309,7 @@ mod tests {
 
         mock_client.expect_get_blocks_and_events().with(eq(from_ts), eq(to_ts)).times(1).returning(
             move |from_ts, to_ts| {
-                Ok(BlocksAndEventsPerTimestampRange {
-                    blocks_and_events: vec![vec![test_block_and_events.clone()]],
-                })
+                Ok(BlocksAndEventsPerTimestampRange { blocks_and_events: vec![vec![test_block_and_events.clone()]] })
             },
         );
 
@@ -370,11 +326,7 @@ mod tests {
             "Expected range.from_ts to be {}, got {}",
             from_ts, batch.range.from_ts
         );
-        assert_eq!(
-            batch.range.to_ts, to_ts,
-            "Expected range.to_ts to be {}, got {}",
-            to_ts, batch.range.to_ts
-        );
+        assert_eq!(batch.range.to_ts, to_ts, "Expected range.to_ts to be {}, got {}", to_ts, batch.range.to_ts);
     }
 
     // Helper function to create a test block

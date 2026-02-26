@@ -11,8 +11,8 @@ use mockall::automock;
 
 use crate::{
     models::{
-        LendingEvent, Market, NewLendingEvent, NewMarketStateSnapshot, NewPositionSnapshot,
-        Position, PositionSnapshot, Timeframe, UserPositionHistoryPoint,
+        LendingEvent, Market, NewLendingEvent, NewMarketStateSnapshot, NewPositionSnapshot, Position, PositionSnapshot,
+        Timeframe, UserPositionHistoryPoint,
     },
     schema::{self},
 };
@@ -57,10 +57,8 @@ impl LendingRepository {
     pub async fn get_all_markets(&self) -> Result<Vec<Market>> {
         let mut conn = self.db_pool.get().await?;
 
-        let markets: Vec<Market> = schema::lending_markets::table
-            .order(schema::lending_markets::created_at.asc())
-            .load(&mut conn)
-            .await?;
+        let markets: Vec<Market> =
+            schema::lending_markets::table.order(schema::lending_markets::created_at.asc()).load(&mut conn).await?;
         Ok(markets)
     }
 
@@ -135,11 +133,7 @@ impl LendingRepository {
         Ok(())
     }
 
-    pub async fn get_user_events_for_market(
-        &self,
-        address: &str,
-        market_id: &str,
-    ) -> Result<Vec<LendingEvent>> {
+    pub async fn get_user_events_for_market(&self, address: &str, market_id: &str) -> Result<Vec<LendingEvent>> {
         let mut conn = self.db_pool.get().await?;
 
         let events: Vec<LendingEvent> = schema::lending_events::table
@@ -168,9 +162,7 @@ impl LendingRepository {
                 }
             }
             (None, Some(address)) => self.calculate_user_positions(address).await,
-            (Some(market_id), None) => {
-                self.calculate_positions_for_market(market_id, page, limit).await
-            }
+            (Some(market_id), None) => self.calculate_positions_for_market(market_id, page, limit).await,
             (None, None) => Err(anyhow::anyhow!("Either market_id or address must be provided")),
         }
     }
@@ -191,10 +183,7 @@ impl LendingRepository {
         Ok(())
     }
 
-    pub async fn insert_market_state_snapshots(
-        &self,
-        snapshots: &[NewMarketStateSnapshot],
-    ) -> Result<()> {
+    pub async fn insert_market_state_snapshots(&self, snapshots: &[NewMarketStateSnapshot]) -> Result<()> {
         if snapshots.is_empty() {
             return Ok(());
         }
@@ -276,11 +265,7 @@ impl LendingRepository {
 
     /******* Private helper methods *******/
 
-    async fn calculate_user_position(
-        &self,
-        address: &str,
-        market_id: &str,
-    ) -> Result<Option<Position>> {
+    async fn calculate_user_position(&self, address: &str, market_id: &str) -> Result<Option<Position>> {
         let events = self.get_user_events_for_market(address, market_id).await?;
 
         if events.is_empty() {
@@ -372,12 +357,7 @@ impl LendingRepository {
         }))
     }
 
-    async fn calculate_positions_for_market(
-        &self,
-        market_id: &str,
-        page: i64,
-        limit: i64,
-    ) -> Result<Vec<Position>> {
+    async fn calculate_positions_for_market(&self, market_id: &str, page: i64, limit: i64) -> Result<Vec<Position>> {
         let mut conn = self.db_pool.get().await?;
 
         let addresses: Vec<String> = schema::lending_events::table
@@ -423,12 +403,11 @@ impl LendingRepository {
     ) -> Result<Vec<crate::models::PositionSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
-        let snapshots: Vec<crate::models::PositionSnapshot> =
-            schema::lending_position_snapshots::table
-                .filter(schema::lending_position_snapshots::timestamp.ge(start_time))
-                .filter(schema::lending_position_snapshots::timestamp.lt(end_time))
-                .load(&mut conn)
-                .await?;
+        let snapshots: Vec<crate::models::PositionSnapshot> = schema::lending_position_snapshots::table
+            .filter(schema::lending_position_snapshots::timestamp.ge(start_time))
+            .filter(schema::lending_position_snapshots::timestamp.lt(end_time))
+            .load(&mut conn)
+            .await?;
 
         Ok(snapshots)
     }
@@ -476,17 +455,16 @@ mod tests {
     use crate::models::NewPositionSnapshot;
     use bigdecimal::BigDecimal;
     use chrono::{Duration, NaiveDate, Timelike, Utc};
-    use diesel_async::pooled_connection::bb8::Pool;
-    use diesel_async::pooled_connection::AsyncDieselConnectionManager;
     use diesel_async::AsyncPgConnection;
+    use diesel_async::pooled_connection::AsyncDieselConnectionManager;
+    use diesel_async::pooled_connection::bb8::Pool;
     use std::str::FromStr;
 
     async fn create_test_pool() -> Arc<Pool<AsyncPgConnection>> {
         dotenvy::dotenv().ok();
 
         let user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "postgres".to_string());
-        let password =
-            std::env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
+        let password = std::env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
         let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
         let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
         let db = std::env::var("POSTGRES_DB").unwrap_or_else(|_| "bento_alephium".to_string());
@@ -549,37 +527,15 @@ mod tests {
         // Two snapshots in hour 0, two in hour +1 → should produce 2 hourly buckets
         let snapshots = vec![
             make_snapshot(test_addr, "market_a", "100.0", "10.0", base),
-            make_snapshot(
-                test_addr,
-                "market_a",
-                "200.0",
-                "20.0",
-                base + Duration::minutes(30),
-            ),
-            make_snapshot(
-                test_addr,
-                "market_a",
-                "300.0",
-                "30.0",
-                base + Duration::hours(1),
-            ),
-            make_snapshot(
-                test_addr,
-                "market_a",
-                "500.0",
-                "50.0",
-                base + Duration::hours(1) + Duration::minutes(30),
-            ),
+            make_snapshot(test_addr, "market_a", "200.0", "20.0", base + Duration::minutes(30)),
+            make_snapshot(test_addr, "market_a", "300.0", "30.0", base + Duration::hours(1)),
+            make_snapshot(test_addr, "market_a", "500.0", "50.0", base + Duration::hours(1) + Duration::minutes(30)),
         ];
         repo.insert_position_snapshots(&snapshots).await.unwrap();
 
         // OneMonth uses hourly bucket_interval
         let result = repo
-            .get_user_position_history(
-                test_addr,
-                Some("market_a"),
-                crate::models::Timeframe::OneMonth,
-            )
+            .get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::OneMonth)
             .await
             .unwrap();
 
@@ -605,14 +561,8 @@ mod tests {
 
         let repo = LendingRepository::new(pool.clone());
         // Fixed past dates — All timeframe uses daily buckets and has no time cutoff
-        let day1 = NaiveDate::from_ymd_opt(2025, 6, 10)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap();
-        let day2 = NaiveDate::from_ymd_opt(2025, 6, 11)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap();
+        let day1 = NaiveDate::from_ymd_opt(2025, 6, 10).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2025, 6, 11).unwrap().and_hms_opt(10, 0, 0).unwrap();
 
         // Two pairs of snapshots on different days → 2 daily buckets
         let snapshots = vec![
@@ -623,10 +573,8 @@ mod tests {
         ];
         repo.insert_position_snapshots(&snapshots).await.unwrap();
 
-        let result = repo
-            .get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::All)
-            .await
-            .unwrap();
+        let result =
+            repo.get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::All).await.unwrap();
 
         assert_eq!(result.len(), 2, "Expected 2 daily buckets");
 
@@ -649,37 +597,19 @@ mod tests {
         cleanup_test_snapshots(&pool, test_addr).await;
 
         let repo = LendingRepository::new(pool.clone());
-        let base = NaiveDate::from_ymd_opt(2025, 1, 15)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap();
+        let base = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 0, 0).unwrap();
 
         // Two markets, same timestamp bucket
         let snapshots = vec![
             make_snapshot(test_addr, "market_a", "100.0", "10.0", base),
-            make_snapshot(
-                test_addr,
-                "market_a",
-                "200.0",
-                "20.0",
-                base + Duration::minutes(30),
-            ),
+            make_snapshot(test_addr, "market_a", "200.0", "20.0", base + Duration::minutes(30)),
             make_snapshot(test_addr, "market_b", "50.0", "5.0", base),
-            make_snapshot(
-                test_addr,
-                "market_b",
-                "150.0",
-                "15.0",
-                base + Duration::minutes(30),
-            ),
+            make_snapshot(test_addr, "market_b", "150.0", "15.0", base + Duration::minutes(30)),
         ];
         repo.insert_position_snapshots(&snapshots).await.unwrap();
 
         // Query without market_id → should SUM last snapshot per market
-        let result = repo
-            .get_user_position_history(test_addr, None, crate::models::Timeframe::All)
-            .await
-            .unwrap();
+        let result = repo.get_user_position_history(test_addr, None, crate::models::Timeframe::All).await.unwrap();
 
         assert_eq!(result.len(), 1, "Expected 1 daily bucket");
 
@@ -698,11 +628,7 @@ mod tests {
         let repo = LendingRepository::new(pool);
 
         let result = repo
-            .get_user_position_history(
-                "test-nonexistent-addr",
-                None,
-                crate::models::Timeframe::OneMonth,
-            )
+            .get_user_position_history("test-nonexistent-addr", None, crate::models::Timeframe::OneMonth)
             .await
             .unwrap();
 
@@ -733,25 +659,15 @@ mod tests {
 
         // OneMonth should only include the recent data point
         let result = repo
-            .get_user_position_history(
-                test_addr,
-                Some("market_a"),
-                crate::models::Timeframe::OneMonth,
-            )
+            .get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::OneMonth)
             .await
             .unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].supply_amount_usd, BigDecimal::from_str("100").unwrap());
 
         // With All timeframe, should get both (different daily buckets)
-        let result_all = repo
-            .get_user_position_history(
-                test_addr,
-                Some("market_a"),
-                crate::models::Timeframe::All,
-            )
-            .await
-            .unwrap();
+        let result_all =
+            repo.get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::All).await.unwrap();
         assert_eq!(result_all.len(), 2);
 
         cleanup_test_snapshots(&pool, test_addr).await;
@@ -765,29 +681,18 @@ mod tests {
         cleanup_test_snapshots(&pool, test_addr).await;
 
         let repo = LendingRepository::new(pool.clone());
-        let base = NaiveDate::from_ymd_opt(2025, 1, 15)
-            .unwrap()
-            .and_hms_opt(10, 15, 0)
-            .unwrap();
+        let base = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 15, 0).unwrap();
 
         let snapshots = vec![make_snapshot(test_addr, "market_a", "42.5", "7.3", base)];
         repo.insert_position_snapshots(&snapshots).await.unwrap();
 
-        let result = repo
-            .get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::All)
-            .await
-            .unwrap();
+        let result =
+            repo.get_user_position_history(test_addr, Some("market_a"), crate::models::Timeframe::All).await.unwrap();
 
         assert_eq!(result.len(), 1);
         // Single snapshot in bucket — last value equals the only value
-        assert_eq!(
-            result[0].supply_amount_usd,
-            BigDecimal::from_str("42.5").unwrap()
-        );
-        assert_eq!(
-            result[0].borrow_amount_usd,
-            BigDecimal::from_str("7.3").unwrap()
-        );
+        assert_eq!(result[0].supply_amount_usd, BigDecimal::from_str("42.5").unwrap());
+        assert_eq!(result[0].borrow_amount_usd, BigDecimal::from_str("7.3").unwrap());
 
         cleanup_test_snapshots(&pool, test_addr).await;
     }

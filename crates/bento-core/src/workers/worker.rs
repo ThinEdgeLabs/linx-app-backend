@@ -94,8 +94,7 @@ impl Worker {
                 self.sync_at_height(1, None).await?;
                 // Take the min timestamp of the blocks at height 1
                 let blocks = get_blocks_at_height(&self.db_pool, 1).await?;
-                blocks.iter().map(|b| b.timestamp).min().unwrap().and_utc().timestamp_millis()
-                    as u64
+                blocks.iter().map(|b| b.timestamp).min().unwrap().and_utc().timestamp_millis() as u64
             }
         };
 
@@ -193,11 +192,7 @@ impl Worker {
     /// * `height` - The block height to sync
     /// * `chains_to_sync` - Optional list of specific (chain_from, chain_to) pairs to fetch. If None, fetches from all 16 chains.
     ///
-    pub async fn sync_at_height(
-        &self,
-        height: u64,
-        chains_to_sync: Option<Vec<(u32, u32)>>,
-    ) -> Result<()> {
+    pub async fn sync_at_height(&self, height: u64, chains_to_sync: Option<Vec<(u32, u32)>>) -> Result<()> {
         use anyhow::Context;
 
         let groups = match chains_to_sync {
@@ -211,14 +206,9 @@ impl Worker {
                 let from = *from_group;
                 let to = *to_group;
                 async move {
-                    self.client.get_block_hash_by_height(height, from, to).await.with_context(
-                        || {
-                            format!(
-                                "Failed to fetch block hash for height {} on chain ({}, {})",
-                                height, from, to
-                            )
-                        },
-                    )
+                    self.client.get_block_hash_by_height(height, from, to).await.with_context(|| {
+                        format!("Failed to fetch block hash for height {} on chain ({}, {})", height, from, to)
+                    })
                 }
             })
             .collect();
@@ -241,10 +231,7 @@ impl Worker {
                 let hash = hashes[0].clone();
                 async move {
                     self.client.get_block_and_events_by_hash(&hash).await.with_context(|| {
-                        format!(
-                            "Failed to fetch block and events for hash {} (chain index {})",
-                            hash, idx
-                        )
+                        format!("Failed to fetch block and events for hash {} (chain index {})", hash, idx)
                     })
                 }
             })
@@ -260,9 +247,7 @@ impl Worker {
 
         self.run_pipeline(vec![BlockBatch { blocks, range: BlockRange { from_ts: 0, to_ts: 0 } }])
             .await
-            .with_context(|| {
-                format!("Failed to process blocks at height {} through pipeline", height)
-            })?;
+            .with_context(|| format!("Failed to process blocks at height {} through pipeline", height))?;
 
         Ok(())
     }
@@ -277,16 +262,10 @@ impl Worker {
         groups
     }
 
-    async fn get_latest_block_timestamp_from_node(
-        &self,
-        chain_from: u32,
-        chain_to: u32,
-    ) -> Result<u64> {
+    async fn get_latest_block_timestamp_from_node(&self, chain_from: u32, chain_to: u32) -> Result<u64> {
         let chain_info = self.client.get_chain_info(chain_from, chain_to).await?;
-        let hashes = self
-            .client
-            .get_block_hash_by_height(chain_info.current_height as u64, chain_from, chain_to)
-            .await?;
+        let hashes =
+            self.client.get_block_hash_by_height(chain_info.current_height as u64, chain_from, chain_to).await?;
         let block = self.client.get_block_and_events_by_hash(&hashes[0]).await?;
         Ok(block.block.timestamp as u64)
     }

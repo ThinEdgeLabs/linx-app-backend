@@ -29,21 +29,14 @@ pub async fn get_txs(db: Arc<DbPool>, limit: i64, offset: i64) -> Result<Vec<Tra
 
     let mut conn = db.get().await?;
 
-    let tx_models: Vec<TransactionModel> = transactions
-        .limit(limit)
-        .offset(offset)
-        .select(TransactionModel::as_select())
-        .load(&mut conn)
-        .await?;
+    let tx_models: Vec<TransactionModel> =
+        transactions.limit(limit).offset(offset).select(TransactionModel::as_select()).load(&mut conn).await?;
 
     Ok(tx_models)
 }
 
 /// Get transaction by hash
-pub async fn get_tx_by_hash(
-    db: Arc<DbPool>,
-    tx_hash_value: &str,
-) -> Result<Option<TransactionModel>> {
+pub async fn get_tx_by_hash(db: Arc<DbPool>, tx_hash_value: &str) -> Result<Option<TransactionModel>> {
     use crate::schema::transactions::dsl::*;
 
     let mut conn = db.get().await?;
@@ -57,10 +50,7 @@ pub async fn get_tx_by_hash(
 }
 
 /// Get transaction by block
-pub async fn get_txs_by_block(
-    db: Arc<DbPool>,
-    block_hash_value: &str,
-) -> Result<Vec<TransactionModel>> {
+pub async fn get_txs_by_block(db: Arc<DbPool>, block_hash_value: &str) -> Result<Vec<TransactionModel>> {
     use crate::schema::transactions::dsl::*;
 
     // Check if block exists

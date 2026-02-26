@@ -3,9 +3,9 @@ use bigdecimal::BigDecimal;
 
 use chrono::{Duration, NaiveDateTime, Utc};
 
+use diesel::QueryableByName;
 use diesel::prelude::{AsChangeset, Insertable, Queryable};
 use diesel::sql_types::{Numeric, Timestamp};
-use diesel::QueryableByName;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;

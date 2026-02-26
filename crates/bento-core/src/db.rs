@@ -67,10 +67,7 @@ fn parse_and_clean_db_url(url: &str) -> (String, Option<String>) {
 }
 
 // Create a new database pool
-pub async fn new_db_pool(
-    database_url: &str,
-    max_pool_size: Option<u32>,
-) -> Result<Arc<DbPool>, PoolError> {
+pub async fn new_db_pool(database_url: &str, max_pool_size: Option<u32>) -> Result<Arc<DbPool>, PoolError> {
     let (_url, cert_path) = parse_and_clean_db_url(database_url);
 
     let config = if cert_path.is_some() {

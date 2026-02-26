@@ -3,16 +3,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 #[derive(
-    Queryable,
-    Selectable,
-    Insertable,
-    Debug,
-    Clone,
-    AsChangeset,
-    Identifiable,
-    Serialize,
-    ToSchema,
-    QueryableByName,
+    Queryable, Selectable, Insertable, Debug, Clone, AsChangeset, Identifiable, Serialize, ToSchema, QueryableByName,
 )]
 #[diesel(table_name = crate::schema::events)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

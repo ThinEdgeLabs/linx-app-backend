@@ -26,12 +26,7 @@ impl TransactionProvider for Client {
 
     /// List transactions of a block with pagination.
     /// GET:/blocks/{block_hash}/transactions?limit={limit}&offset={offset}
-    async fn get_block_txs(
-        &self,
-        block_hash: String,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Transaction>> {
+    async fn get_block_txs(&self, block_hash: String, limit: i64, offset: i64) -> Result<Vec<Transaction>> {
         let endpoint = format!("blocks/{block_hash}/transactions?limit={limit}&offset={offset}");
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let response = self.inner.get(url).send().await?.json().await?;
@@ -58,11 +53,7 @@ impl Client {
     ///
     /// # Returns
     /// Transaction ID and routing groups on success
-    pub async fn submit_transaction(
-        &self,
-        unsigned_tx: &str,
-        signature: &str,
-    ) -> Result<SubmitTxResponse> {
+    pub async fn submit_transaction(&self, unsigned_tx: &str, signature: &str) -> Result<SubmitTxResponse> {
         let endpoint = "transactions/submit";
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
 
@@ -73,12 +64,7 @@ impl Client {
 
         let body = serde_json::to_string(&payload)?;
 
-        let response = self.inner
-            .post(url)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .send()
-            .await?;
+        let response = self.inner.post(url).header("Content-Type", "application/json").body(body).send().await?;
 
         // Check for HTTP errors and extract error details
         if !response.status().is_success() {
@@ -86,11 +72,7 @@ impl Client {
 
             // Try to extract "detail" field from JSON error response
             let error_message = if let Ok(json_error) = serde_json::from_str::<serde_json::Value>(&error_text) {
-                json_error
-                    .get("detail")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&error_text)
-                    .to_string()
+                json_error.get("detail").and_then(|v| v.as_str()).unwrap_or(&error_text).to_string()
             } else {
                 error_text
             };

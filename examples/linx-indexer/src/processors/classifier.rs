@@ -37,10 +37,7 @@ impl TransactionClassifier {
 
     fn is_swap_transaction(&self, tx: &Transaction) -> bool {
         tx.contract_inputs.iter().any(|input| self.dex_contract_addresses.contains(&input.address))
-            || tx
-                .generated_outputs
-                .iter()
-                .any(|output| self.dex_contract_addresses.contains(&output.address))
+            || tx.generated_outputs.iter().any(|output| self.dex_contract_addresses.contains(&output.address))
     }
 
     fn is_contract_transaction(&self, tx: &Transaction) -> bool {

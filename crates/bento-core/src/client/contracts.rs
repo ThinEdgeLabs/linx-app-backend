@@ -12,13 +12,7 @@ impl ContractsProvider for Client {
         let endpoint = "contracts/call-contract";
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let json_body = serde_json::to_string(&params)?;
-        let response = self
-            .inner
-            .post(url)
-            .header("Content-Type", "application/json")
-            .body(json_body)
-            .send()
-            .await?;
+        let response = self.inner.post(url).header("Content-Type", "application/json").body(json_body).send().await?;
         let response = response.error_for_status()?;
 
         let result: CallContractResult = response.json().await?;

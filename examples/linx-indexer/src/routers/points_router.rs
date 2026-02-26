@@ -90,17 +90,13 @@ fn default_limit() -> i64 {
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_leaderboard_handler(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     // Create repository
     let repo = PointsRepository::new(state.db.clone());
 
     // Get active season
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
 
     // Fetch top 50 from latest snapshot (season_id, snapshot_date = None, page = 1, limit = 50)
     let snapshots = repo.get_leaderboard(active_season.id, None, 1, 50).await?;
@@ -142,10 +138,8 @@ pub async fn get_user_points_handler(
     let has_applied_referral_code = user_referral.is_some();
 
     // Get active season
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
 
     let snapshot = repo.get_latest_snapshot(&address, active_season.id).await?;
 
@@ -169,13 +163,7 @@ pub async fn get_user_points_handler(
         }
         None => {
             let referral_code = repo.get_or_create_referral_code(&address).await?;
-            Ok(Json(UserPointsResponse {
-                points: 0,
-                rank: 0,
-                referral_code,
-                referrals: 0,
-                has_applied_referral_code,
-            }))
+            Ok(Json(UserPointsResponse { points: 0, rank: 0, referral_code, referrals: 0, has_applied_referral_code }))
         }
     }
 }
@@ -193,15 +181,11 @@ pub async fn get_user_points_handler(
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_current_season_handler(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn get_current_season_handler(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
 
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
 
     Ok(Json(active_season))
 }
@@ -231,8 +215,7 @@ pub async fn apply_referral_handler(
     // Verify timestamp is recent (within 5 minutes)
     const MAX_TIME_DIFF_MS: i64 = 5 * 60 * 1000;
     let current_timestamp =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
-            as i64;
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
 
     let timestamp_diff = (current_timestamp - request.timestamp).abs();
     if timestamp_diff > MAX_TIME_DIFF_MS {
@@ -240,9 +223,8 @@ pub async fn apply_referral_handler(
     }
 
     // Verify that the public key matches the address
-    let pubkey_matches =
-        crate::crypto::verify_public_key_for_address(&request.public_key, &request.user_address)
-            .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
+    let pubkey_matches = crate::crypto::verify_public_key_for_address(&request.public_key, &request.user_address)
+        .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
 
     if !pubkey_matches {
         return Err(AppError::Forbidden("Invalid signature".to_string()));
@@ -252,9 +234,8 @@ pub async fn apply_referral_handler(
     let message = format!("Apply referral: {} at {}", request.referral_code, request.timestamp);
 
     // Verify the signature
-    let is_valid =
-        crate::crypto::verify_signature(&request.public_key, &message, &request.signature)
-            .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
+    let is_valid = crate::crypto::verify_signature(&request.public_key, &message, &request.signature)
+        .map_err(|_| AppError::Forbidden("Invalid signature".to_string()))?;
 
     if !is_valid {
         return Err(AppError::Forbidden("Invalid signature".to_string()));
@@ -288,10 +269,8 @@ pub async fn apply_referral_handler(
 
     // Award signup bonus immediately
     // Get active season
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
 
     // Load config to get bonus amount
     let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".to_string());
@@ -343,18 +322,14 @@ pub async fn get_referral_details_handler(
     let repo = PointsRepository::new(state.db.clone());
 
     // Get active season
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::Internal(anyhow::anyhow!("No active season found")))?;
 
     // Get summary (total count and total bonus points)
     let summary = repo.get_referral_summary(&address, active_season.id).await?;
 
     // Get paginated referral details
-    let referrals = repo
-        .get_referral_details_paginated(&address, active_season.id, query.page, query.limit)
-        .await?;
+    let referrals = repo.get_referral_details_paginated(&address, active_season.id, query.page, query.limit).await?;
 
     // Calculate if there are more results
     let has_more = (query.page + 1) * query.limit < summary.total_referrals;

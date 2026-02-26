@@ -27,13 +27,13 @@ impl Network {
     /// A string containing the base URL of the network.
     pub fn base_url(&self) -> String {
         match self {
-            Network::Devnet => {
-                env::var("DEV_NODE_URL").unwrap_or_else(|_| "http://127.0.0.1:12973".to_owned())
+            Network::Devnet => env::var("DEV_NODE_URL").unwrap_or_else(|_| "http://127.0.0.1:12973".to_owned()),
+            Network::Testnet => {
+                env::var("TESTNET_NODE_URL").unwrap_or_else(|_| "https://node.testnet.alephium.org".to_owned())
             }
-            Network::Testnet => env::var("TESTNET_NODE_URL")
-                .unwrap_or_else(|_| "https://node.testnet.alephium.org".to_owned()),
-            Network::Mainnet => env::var("MAINNET_NODE_URL")
-                .unwrap_or_else(|_| "https://node.mainnet.alephium.org".to_owned()),
+            Network::Mainnet => {
+                env::var("MAINNET_NODE_URL").unwrap_or_else(|_| "https://node.mainnet.alephium.org".to_owned())
+            }
             Network::Custom(url, _) => url.clone(),
         }
     }
@@ -236,8 +236,7 @@ mod network_tests {
         let mainnet_string: String = Network::Mainnet.into();
         assert_eq!(mainnet_string, "mainnet");
 
-        let custom_network =
-            Network::Custom("http://example.com".to_string(), NetworkType::Testnet);
+        let custom_network = Network::Custom("http://example.com".to_string(), NetworkType::Testnet);
         let custom_string: String = custom_network.into();
         assert_eq!(custom_string, "testnet");
     }

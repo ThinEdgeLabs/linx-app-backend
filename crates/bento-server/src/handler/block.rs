@@ -1,8 +1,6 @@
 use axum::extract::{Query, State};
 use axum::Json;
-use bento_types::repository::{
-    get_block_by_hash, get_block_by_height, get_block_transactions, get_blocks,
-};
+use bento_types::repository::{get_block_by_hash, get_block_by_height, get_block_transactions, get_blocks};
 
 use crate::error::AppError;
 use crate::handler::dto::{BlockByHeightQuery, TransactionDto};
@@ -40,8 +38,7 @@ pub async fn get_blocks_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let db = state.db;
     let pagination = query.pagination;
-    let block_models =
-        get_blocks(db, pagination.get_limit(), pagination.get_offset(), Some(query.order)).await?;
+    let block_models = get_blocks(db, pagination.get_limit(), pagination.get_offset(), Some(query.order)).await?;
     Ok(Json(block_models))
 }
 

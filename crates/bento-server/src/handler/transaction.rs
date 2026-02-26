@@ -3,9 +3,7 @@ use axum::Json;
 use bento_types::repository::{get_tx_by_hash, get_txs, get_txs_by_block};
 
 use crate::error::AppError;
-use crate::handler::dto::{
-    TransactionBlockQuery, TransactionDto, TransactionHashQuery, TransactionsQuery,
-};
+use crate::handler::dto::{TransactionBlockQuery, TransactionDto, TransactionHashQuery, TransactionsQuery};
 use crate::AppState;
 use crate::Pagination;
 use axum::response::IntoResponse;
@@ -61,9 +59,7 @@ pub async fn get_tx_by_hash_handler(
     let tx_model = get_tx_by_hash(db, &hash).await?;
 
     if tx_model.is_none() {
-        return Err(AppError::NotFound(
-            format!("Transaction with tx id {hash} not found").to_string(),
-        ));
+        return Err(AppError::NotFound(format!("Transaction with tx id {hash} not found").to_string()));
     }
     Ok(Json(tx_model))
 }

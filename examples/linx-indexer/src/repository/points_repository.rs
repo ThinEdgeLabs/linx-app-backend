@@ -13,9 +13,8 @@ use rand::distr::{Alphanumeric, SampleString};
 
 use crate::{
     models::{
-        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewReferralCode, NewSeason,
-        NewUserReferral, PointsConfig, PointsMultiplier, PointsSnapshot, ReferralCode, Season,
-        UserReferral,
+        NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewReferralCode, NewSeason, NewUserReferral,
+        PointsConfig, PointsMultiplier, PointsSnapshot, ReferralCode, Season, UserReferral,
     },
     schema,
 };
@@ -27,8 +26,7 @@ pub trait PointsRepositoryTrait {
 
     async fn get_points_config(&self) -> Result<Vec<PointsConfig>>;
 
-    async fn get_points_config_for_action(&self, action_type: &str)
-    -> Result<Option<PointsConfig>>;
+    async fn get_points_config_for_action(&self, action_type: &str) -> Result<Option<PointsConfig>>;
 
     async fn insert_points_config(&self, configs: &[NewPointsConfig]) -> Result<()>;
 
@@ -36,8 +34,7 @@ pub trait PointsRepositoryTrait {
 
     async fn get_active_multipliers(&self) -> Result<Vec<PointsMultiplier>>;
 
-    async fn get_multipliers_by_type(&self, multiplier_type: &str)
-    -> Result<Vec<PointsMultiplier>>;
+    async fn get_multipliers_by_type(&self, multiplier_type: &str) -> Result<Vec<PointsMultiplier>>;
 
     async fn insert_multipliers(&self, multipliers: &[NewPointsMultiplier]) -> Result<()>;
 
@@ -45,8 +42,7 @@ pub trait PointsRepositoryTrait {
 
     async fn get_referral_code(&self, code: &str) -> Result<Option<ReferralCode>>;
 
-    async fn get_referral_code_by_owner(&self, owner_address: &str)
-    -> Result<Option<ReferralCode>>;
+    async fn get_referral_code_by_owner(&self, owner_address: &str) -> Result<Option<ReferralCode>>;
 
     async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode>;
 
@@ -103,17 +99,9 @@ pub trait PointsRepositoryTrait {
         limit: i64,
     ) -> Result<Vec<PointsSnapshot>>;
 
-    async fn get_latest_snapshot(
-        &self,
-        address: &str,
-        season_id: i32,
-    ) -> Result<Option<PointsSnapshot>>;
+    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>>;
 
-    async fn get_snapshots_by_date(
-        &self,
-        snapshot_date: NaiveDate,
-        season_id: i32,
-    ) -> Result<Vec<PointsSnapshot>>;
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>>;
 
     async fn get_user_rank(&self, snapshot: &PointsSnapshot) -> Result<i64>;
 
@@ -128,12 +116,7 @@ pub trait PointsRepositoryTrait {
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
 
-    async fn award_bonus_points(
-        &self,
-        user_address: &str,
-        bonus_amount: i32,
-        season_id: i32,
-    ) -> Result<()>;
+    async fn award_bonus_points(&self, user_address: &str, bonus_amount: i32, season_id: i32) -> Result<()>;
 }
 
 pub struct PointsRepository {
@@ -154,18 +137,13 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn get_points_config(&self) -> Result<Vec<PointsConfig>> {
         let mut conn = self.db_pool.get().await?;
 
-        let configs: Vec<PointsConfig> = schema::points_config::table
-            .filter(schema::points_config::is_active.eq(true))
-            .load(&mut conn)
-            .await?;
+        let configs: Vec<PointsConfig> =
+            schema::points_config::table.filter(schema::points_config::is_active.eq(true)).load(&mut conn).await?;
 
         Ok(configs)
     }
 
-    async fn get_points_config_for_action(
-        &self,
-        action_type: &str,
-    ) -> Result<Option<PointsConfig>> {
+    async fn get_points_config_for_action(&self, action_type: &str) -> Result<Option<PointsConfig>> {
         let mut conn = self.db_pool.get().await?;
 
         let config: Option<PointsConfig> = schema::points_config::table
@@ -209,10 +187,7 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(multipliers)
     }
 
-    async fn get_multipliers_by_type(
-        &self,
-        multiplier_type: &str,
-    ) -> Result<Vec<PointsMultiplier>> {
+    async fn get_multipliers_by_type(&self, multiplier_type: &str) -> Result<Vec<PointsMultiplier>> {
         let mut conn = self.db_pool.get().await?;
 
         let multipliers: Vec<PointsMultiplier> = schema::points_multipliers::table
@@ -232,10 +207,7 @@ impl PointsRepositoryTrait for PointsRepository {
 
         let mut conn = self.db_pool.get().await?;
 
-        diesel::insert_into(schema::points_multipliers::table)
-            .values(multipliers)
-            .execute(&mut conn)
-            .await?;
+        diesel::insert_into(schema::points_multipliers::table).values(multipliers).execute(&mut conn).await?;
 
         Ok(())
     }
@@ -254,10 +226,7 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(referral_code)
     }
 
-    async fn get_referral_code_by_owner(
-        &self,
-        owner_address: &str,
-    ) -> Result<Option<ReferralCode>> {
+    async fn get_referral_code_by_owner(&self, owner_address: &str) -> Result<Option<ReferralCode>> {
         let mut conn = self.db_pool.get().await?;
 
         let referral_code: Option<ReferralCode> = schema::referral_codes::table
@@ -272,10 +241,8 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn insert_referral_code(&self, code: NewReferralCode) -> Result<ReferralCode> {
         let mut conn = self.db_pool.get().await?;
 
-        let inserted_code: ReferralCode = diesel::insert_into(schema::referral_codes::table)
-            .values(&code)
-            .get_result(&mut conn)
-            .await?;
+        let inserted_code: ReferralCode =
+            diesel::insert_into(schema::referral_codes::table).values(&code).get_result(&mut conn).await?;
 
         Ok(inserted_code)
     }
@@ -290,28 +257,19 @@ impl PointsRepositoryTrait for PointsRepository {
         for attempt in 0..5 {
             let code = generate_readable_code(owner_address, attempt);
 
-            let new_code =
-                NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
+            let new_code = NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
 
             match self.insert_referral_code(new_code).await {
                 Ok(created_code) => {
                     if attempt > 0 {
-                        tracing::info!(
-                            "Generated readable referral code after {} attempts",
-                            attempt + 1
-                        );
+                        tracing::info!("Generated readable referral code after {} attempts", attempt + 1);
                     }
                     return Ok(created_code.code);
                 }
                 Err(e) => {
                     let error_msg = e.to_string().to_lowercase();
-                    if error_msg.contains("unique constraint")
-                        || error_msg.contains("duplicate key")
-                    {
-                        tracing::debug!(
-                            "Readable code collision on attempt {}, retrying...",
-                            attempt + 1
-                        );
+                    if error_msg.contains("unique constraint") || error_msg.contains("duplicate key") {
+                        tracing::debug!("Readable code collision on attempt {}, retrying...", attempt + 1);
                         continue;
                     }
                     return Err(e); // Other error type
@@ -324,8 +282,7 @@ impl PointsRepositoryTrait for PointsRepository {
             // Generate random 8-character alphanumeric code
             let code = Alphanumeric.sample_string(&mut rand::rng(), 8).to_uppercase();
 
-            let new_code =
-                NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
+            let new_code = NewReferralCode { code: code.clone(), owner_address: owner_address.to_string() };
 
             match self.insert_referral_code(new_code).await {
                 Ok(created_code) => {
@@ -334,9 +291,7 @@ impl PointsRepositoryTrait for PointsRepository {
                 }
                 Err(e) => {
                     let error_msg = e.to_string().to_lowercase();
-                    if error_msg.contains("unique constraint")
-                        || error_msg.contains("duplicate key")
-                    {
+                    if error_msg.contains("unique constraint") || error_msg.contains("duplicate key") {
                         continue;
                     }
                     return Err(e); // Other error type
@@ -370,10 +325,8 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn insert_user_referral(&self, referral: NewUserReferral) -> Result<UserReferral> {
         let mut conn = self.db_pool.get().await?;
 
-        let inserted_referral: UserReferral = diesel::insert_into(schema::user_referrals::table)
-            .values(&referral)
-            .get_result(&mut conn)
-            .await?;
+        let inserted_referral: UserReferral =
+            diesel::insert_into(schema::user_referrals::table).values(&referral).get_result(&mut conn).await?;
 
         Ok(inserted_referral)
     }
@@ -544,10 +497,8 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn create_season(&self, season: NewSeason) -> Result<Season> {
         let mut conn = self.db_pool.get().await?;
 
-        let created_season: Season = diesel::insert_into(schema::points_seasons::table)
-            .values(&season)
-            .get_result(&mut conn)
-            .await?;
+        let created_season: Season =
+            diesel::insert_into(schema::points_seasons::table).values(&season).get_result(&mut conn).await?;
 
         Ok(created_season)
     }
@@ -613,11 +564,7 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshots)
     }
 
-    async fn get_latest_snapshot(
-        &self,
-        address: &str,
-        season_id: i32,
-    ) -> Result<Option<PointsSnapshot>> {
+    async fn get_latest_snapshot(&self, address: &str, season_id: i32) -> Result<Option<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshot: Option<PointsSnapshot> = schema::points_snapshots::table
@@ -631,11 +578,7 @@ impl PointsRepositoryTrait for PointsRepository {
         Ok(snapshot)
     }
 
-    async fn get_snapshots_by_date(
-        &self,
-        snapshot_date: NaiveDate,
-        season_id: i32,
-    ) -> Result<Vec<PointsSnapshot>> {
+    async fn get_snapshots_by_date(&self, snapshot_date: NaiveDate, season_id: i32) -> Result<Vec<PointsSnapshot>> {
         let mut conn = self.db_pool.get().await?;
 
         let snapshots: Vec<PointsSnapshot> = schema::points_snapshots::table
@@ -722,24 +665,15 @@ impl PointsRepositoryTrait for PointsRepository {
             .do_update()
             .set((
                 schema::points_snapshots::swap_points.eq(diesel::dsl::sql("EXCLUDED.swap_points")),
-                schema::points_snapshots::supply_points
-                    .eq(diesel::dsl::sql("EXCLUDED.supply_points")),
-                schema::points_snapshots::borrow_points
-                    .eq(diesel::dsl::sql("EXCLUDED.borrow_points")),
-                schema::points_snapshots::base_points_total
-                    .eq(diesel::dsl::sql("EXCLUDED.base_points_total")),
-                schema::points_snapshots::multiplier_type
-                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_type")),
-                schema::points_snapshots::multiplier_value
-                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_value")),
-                schema::points_snapshots::multiplier_points
-                    .eq(diesel::dsl::sql("EXCLUDED.multiplier_points")),
-                schema::points_snapshots::referral_points
-                    .eq(diesel::dsl::sql("EXCLUDED.referral_points")),
-                schema::points_snapshots::total_points
-                    .eq(diesel::dsl::sql("EXCLUDED.total_points")),
-                schema::points_snapshots::total_volume_usd
-                    .eq(diesel::dsl::sql("EXCLUDED.total_volume_usd")),
+                schema::points_snapshots::supply_points.eq(diesel::dsl::sql("EXCLUDED.supply_points")),
+                schema::points_snapshots::borrow_points.eq(diesel::dsl::sql("EXCLUDED.borrow_points")),
+                schema::points_snapshots::base_points_total.eq(diesel::dsl::sql("EXCLUDED.base_points_total")),
+                schema::points_snapshots::multiplier_type.eq(diesel::dsl::sql("EXCLUDED.multiplier_type")),
+                schema::points_snapshots::multiplier_value.eq(diesel::dsl::sql("EXCLUDED.multiplier_value")),
+                schema::points_snapshots::multiplier_points.eq(diesel::dsl::sql("EXCLUDED.multiplier_points")),
+                schema::points_snapshots::referral_points.eq(diesel::dsl::sql("EXCLUDED.referral_points")),
+                schema::points_snapshots::total_points.eq(diesel::dsl::sql("EXCLUDED.total_points")),
+                schema::points_snapshots::total_volume_usd.eq(diesel::dsl::sql("EXCLUDED.total_volume_usd")),
             ))
             .execute(&mut conn)
             .await?;
@@ -750,38 +684,29 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot> {
         let mut conn = self.db_pool.get().await?;
 
-        let upserted_snapshot: PointsSnapshot =
-            diesel::insert_into(schema::points_snapshots::table)
-                .values(&snapshot)
-                .on_conflict((
-                    schema::points_snapshots::address,
-                    schema::points_snapshots::snapshot_date,
-                ))
-                .do_update()
-                .set((
-                    schema::points_snapshots::swap_points.eq(&snapshot.swap_points),
-                    schema::points_snapshots::supply_points.eq(&snapshot.supply_points),
-                    schema::points_snapshots::borrow_points.eq(&snapshot.borrow_points),
-                    schema::points_snapshots::base_points_total.eq(&snapshot.base_points_total),
-                    schema::points_snapshots::multiplier_type.eq(&snapshot.multiplier_type),
-                    schema::points_snapshots::multiplier_value.eq(&snapshot.multiplier_value),
-                    schema::points_snapshots::multiplier_points.eq(&snapshot.multiplier_points),
-                    schema::points_snapshots::referral_points.eq(&snapshot.referral_points),
-                    schema::points_snapshots::total_points.eq(&snapshot.total_points),
-                    schema::points_snapshots::total_volume_usd.eq(&snapshot.total_volume_usd),
-                ))
-                .get_result(&mut conn)
-                .await?;
+        let upserted_snapshot: PointsSnapshot = diesel::insert_into(schema::points_snapshots::table)
+            .values(&snapshot)
+            .on_conflict((schema::points_snapshots::address, schema::points_snapshots::snapshot_date))
+            .do_update()
+            .set((
+                schema::points_snapshots::swap_points.eq(&snapshot.swap_points),
+                schema::points_snapshots::supply_points.eq(&snapshot.supply_points),
+                schema::points_snapshots::borrow_points.eq(&snapshot.borrow_points),
+                schema::points_snapshots::base_points_total.eq(&snapshot.base_points_total),
+                schema::points_snapshots::multiplier_type.eq(&snapshot.multiplier_type),
+                schema::points_snapshots::multiplier_value.eq(&snapshot.multiplier_value),
+                schema::points_snapshots::multiplier_points.eq(&snapshot.multiplier_points),
+                schema::points_snapshots::referral_points.eq(&snapshot.referral_points),
+                schema::points_snapshots::total_points.eq(&snapshot.total_points),
+                schema::points_snapshots::total_volume_usd.eq(&snapshot.total_volume_usd),
+            ))
+            .get_result(&mut conn)
+            .await?;
 
         Ok(upserted_snapshot)
     }
 
-    async fn award_bonus_points(
-        &self,
-        user_address: &str,
-        bonus_amount: i32,
-        season_id: i32,
-    ) -> Result<()> {
+    async fn award_bonus_points(&self, user_address: &str, bonus_amount: i32, season_id: i32) -> Result<()> {
         let mut conn = self.db_pool.get().await?;
 
         // Get user's latest snapshot in current season
@@ -826,10 +751,7 @@ impl PointsRepositoryTrait for PointsRepository {
                 season_id,
             };
 
-            diesel::insert_into(schema::points_snapshots::table)
-                .values(&new_snapshot)
-                .execute(&mut conn)
-                .await?;
+            diesel::insert_into(schema::points_snapshots::table).values(&new_snapshot).execute(&mut conn).await?;
         }
 
         Ok(())
@@ -850,17 +772,15 @@ fn generate_readable_code(address: &str, attempt: u32) -> String {
 
     // Word lists for readable codes
     const ADJECTIVES: &[&str] = &[
-        "swift", "bright", "calm", "bold", "wise", "cool", "warm", "dark", "light", "quick",
-        "slow", "soft", "hard", "fair", "wild", "tame", "grand", "small", "tall", "short", "long",
-        "wide", "thin", "thick", "young", "old", "new", "pure", "clear", "deep", "flat", "steep",
-        "sharp", "blunt", "rough", "smooth", "clean", "dirty", "fresh", "stale", "sweet", "sour",
-        "spicy", "mild", "hot", "cold", "wet", "dry", "loud", "quiet", "high", "low", "fast",
-        "slow", "strong", "weak", "rich", "poor", "full", "empty", "heavy", "light", "tight",
-        "loose", "dense", "thin", "solid", "fluid", "stable", "shaky", "firm", "soft", "rigid",
-        "flexible", "hard", "gentle", "harsh", "kind", "mean", "nice", "good", "bad", "great",
-        "small", "huge", "tiny", "giant", "mini", "super", "ultra", "mega", "micro", "prime",
-        "royal", "noble", "humble", "proud", "modest", "brave", "timid", "fierce", "meek", "bold",
-        "shy",
+        "swift", "bright", "calm", "bold", "wise", "cool", "warm", "dark", "light", "quick", "slow", "soft", "hard",
+        "fair", "wild", "tame", "grand", "small", "tall", "short", "long", "wide", "thin", "thick", "young", "old",
+        "new", "pure", "clear", "deep", "flat", "steep", "sharp", "blunt", "rough", "smooth", "clean", "dirty",
+        "fresh", "stale", "sweet", "sour", "spicy", "mild", "hot", "cold", "wet", "dry", "loud", "quiet", "high",
+        "low", "fast", "slow", "strong", "weak", "rich", "poor", "full", "empty", "heavy", "light", "tight", "loose",
+        "dense", "thin", "solid", "fluid", "stable", "shaky", "firm", "soft", "rigid", "flexible", "hard", "gentle",
+        "harsh", "kind", "mean", "nice", "good", "bad", "great", "small", "huge", "tiny", "giant", "mini", "super",
+        "ultra", "mega", "micro", "prime", "royal", "noble", "humble", "proud", "modest", "brave", "timid", "fierce",
+        "meek", "bold", "shy",
     ];
 
     const NOUNS: &[&str] = &[

@@ -1,6 +1,6 @@
 use crate::repository::{
-    AccountTransactionRepository, AccountTransactionRepositoryTrait, LendingRepository,
-    LendingRepositoryTrait, PointsRepository, PointsRepositoryTrait,
+    AccountTransactionRepository, AccountTransactionRepositoryTrait, LendingRepository, LendingRepositoryTrait,
+    PointsRepository, PointsRepositoryTrait,
 };
 use crate::services::price::token_service::{TokenService, TokenServiceTrait};
 use anyhow::{Context, Result};
@@ -61,17 +61,12 @@ impl UserDailyActivity {
 
     fn finalize(&mut self) {
         self.base_points_total = self.swap_points + self.supply_points + self.borrow_points;
-        self.total_volume_usd =
-            &self.swap_volume_usd + &self.supply_volume_usd + &self.borrow_volume_usd;
+        self.total_volume_usd = &self.swap_volume_usd + &self.supply_volume_usd + &self.borrow_volume_usd;
     }
 }
 
 impl PointsCalculatorService {
-    pub fn new(
-        db_pool: Arc<DbPool>,
-        price_service: Arc<TokenService>,
-        config: PointsConfigToml,
-    ) -> Self {
+    pub fn new(db_pool: Arc<DbPool>, price_service: Arc<TokenService>, config: PointsConfigToml) -> Self {
         Self {
             points_repository: PointsRepository::new(db_pool.clone()),
             lending_repository: LendingRepository::new(db_pool.clone()),
@@ -145,11 +140,7 @@ where
     }
 
     /// Calculate points for a date range
-    pub async fn calculate_points_for_range(
-        &self,
-        start_date: NaiveDate,
-        end_date: NaiveDate,
-    ) -> Result<()> {
+    pub async fn calculate_points_for_range(&self, start_date: NaiveDate, end_date: NaiveDate) -> Result<()> {
         let mut current_date = start_date;
         while current_date <= end_date {
             self.calculate_points_for_date(current_date).await?;
@@ -162,20 +153,12 @@ where
     pub async fn run_scheduler(&self) -> Result<()> {
         // Parse configured calculation time (e.g., "01:00")
         let time_parts: Vec<&str> = self.config.calculation_time.split(':').collect();
-        let target_hour: u32 = time_parts
-            .first()
-            .and_then(|h| h.parse().ok())
-            .context("Invalid calculation_time hour")?;
-        let target_minute: u32 = time_parts
-            .get(1)
-            .and_then(|m| m.parse().ok())
-            .context("Invalid calculation_time minute")?;
+        let target_hour: u32 =
+            time_parts.first().and_then(|h| h.parse().ok()).context("Invalid calculation_time hour")?;
+        let target_minute: u32 =
+            time_parts.get(1).and_then(|m| m.parse().ok()).context("Invalid calculation_time minute")?;
 
-        tracing::info!(
-            "Points calculator daemon started. Will run daily at {:02}:{:02}",
-            target_hour,
-            target_minute
-        );
+        tracing::info!("Points calculator daemon started. Will run daily at {:02}:{:02}", target_hour, target_minute);
 
         let interval = tokio::time::Duration::from_secs(300); // Check every 5 minutes
         let mut interval_timer = tokio::time::interval(interval);
@@ -196,8 +179,7 @@ where
 
             if should_run {
                 // Calculate for yesterday (complete day)
-                let yesterday =
-                    current_date.pred_opt().context("Failed to get yesterday's date")?;
+                let yesterday = current_date.pred_opt().context("Failed to get yesterday's date")?;
 
                 tracing::info!(
                     "Starting scheduled points calculation for {} at {:02}:{:02}...",
@@ -252,8 +234,7 @@ where
         );
 
         // Query Linx swaps for this date (only swaps submitted through the Linx App earn points)
-        let swaps =
-            self.account_tx_repository.get_linx_swaps_in_period(start_time, end_time).await?;
+        let swaps = self.account_tx_repository.get_linx_swaps_in_period(start_time, end_time).await?;
 
         tracing::info!("Processing {} Linx swaps for points calculation on {}", swaps.len(), date);
 
@@ -294,23 +275,17 @@ where
 
             // Calculate USD value and accumulate per user
             let amount_usd = &decimal_amount * &token_price;
-            *user_swap_volumes
-                .entry(swap_tx.address.clone())
-                .or_insert_with(BigDecimal::zero) += amount_usd;
+            *user_swap_volumes.entry(swap_tx.address.clone()).or_insert_with(BigDecimal::zero) += amount_usd;
         }
 
         // Calculate points from accumulated USD volumes
         for (address, total_volume_usd) in user_swap_volumes {
-            let activity = user_activities
-                .entry(address.clone())
-                .or_insert_with(|| UserDailyActivity::new(address));
+            let activity = user_activities.entry(address.clone()).or_insert_with(|| UserDailyActivity::new(address));
 
             // Calculate points once from total volume (round up)
             let points_earned_decimal = &total_volume_usd * points_per_usd;
-            let points_earned = points_earned_decimal
-                .with_scale_round(0, bigdecimal::RoundingMode::Ceiling)
-                .to_i32()
-                .unwrap_or(0);
+            let points_earned =
+                points_earned_decimal.with_scale_round(0, bigdecimal::RoundingMode::Ceiling).to_i32().unwrap_or(0);
             activity.swap_points = points_earned;
             activity.swap_volume_usd = total_volume_usd;
         }
@@ -330,9 +305,7 @@ where
         let supply_config = match points_config.get("supply") {
             Some(config) => config,
             None => {
-                tracing::warn!(
-                    "No points config found for 'supply' action, skipping lending points"
-                );
+                tracing::warn!("No points config found for 'supply' action, skipping lending points");
                 return Ok(());
             }
         };
@@ -340,9 +313,7 @@ where
         let borrow_config = match points_config.get("borrow") {
             Some(config) => config,
             None => {
-                tracing::warn!(
-                    "No points config found for 'borrow' action, skipping lending points"
-                );
+                tracing::warn!("No points config found for 'borrow' action, skipping lending points");
                 return Ok(());
             }
         };
@@ -350,9 +321,7 @@ where
         let supply_points_per_usd_per_day = match &supply_config.points_per_usd_per_day {
             Some(ppu) => ppu,
             None => {
-                tracing::warn!(
-                    "No points_per_usd_per_day configured for 'supply' action, skipping lending points"
-                );
+                tracing::warn!("No points_per_usd_per_day configured for 'supply' action, skipping lending points");
                 return Ok(());
             }
         };
@@ -360,19 +329,15 @@ where
         let borrow_points_per_usd_per_day = match &borrow_config.points_per_usd_per_day {
             Some(ppu) => ppu,
             None => {
-                tracing::warn!(
-                    "No points_per_usd_per_day configured for 'borrow' action, skipping lending points"
-                );
+                tracing::warn!("No points_per_usd_per_day configured for 'borrow' action, skipping lending points");
                 return Ok(());
             }
         };
 
         // Convert daily rate to per-second rate
         const SECONDS_PER_DAY: i64 = 86400;
-        let supply_points_per_usd_per_second =
-            supply_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
-        let borrow_points_per_usd_per_second =
-            borrow_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
+        let supply_points_per_usd_per_second = supply_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
+        let borrow_points_per_usd_per_second = borrow_points_per_usd_per_day / BigDecimal::from(SECONDS_PER_DAY);
 
         // Get date range (midnight to midnight)
         let day_start = NaiveDateTime::new(date, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
@@ -382,8 +347,7 @@ where
         );
 
         // Query position snapshots for this date
-        let snapshots =
-            self.lending_repository.get_position_snapshots_in_period(day_start, day_end).await?;
+        let snapshots = self.lending_repository.get_position_snapshots_in_period(day_start, day_end).await?;
 
         tracing::info!("Processing {} position snapshots for date {}", snapshots.len(), date);
 
@@ -401,9 +365,8 @@ where
                 continue;
             }
 
-            let activity = user_activities
-                .entry(address.clone())
-                .or_insert_with(|| UserDailyActivity::new(address.clone()));
+            let activity =
+                user_activities.entry(address.clone()).or_insert_with(|| UserDailyActivity::new(address.clone()));
 
             // Track current state per market (market_id -> (supply_usd, borrow_usd))
             let mut market_states: HashMap<String, (BigDecimal, BigDecimal)> = HashMap::new();
@@ -413,8 +376,7 @@ where
             let mut total_borrow_usd_seconds = BigDecimal::zero();
 
             // Collect all unique timestamps where state changes occur
-            let mut timestamps: Vec<NaiveDateTime> =
-                snapshots.iter().map(|s| s.timestamp).collect();
+            let mut timestamps: Vec<NaiveDateTime> = snapshots.iter().map(|s| s.timestamp).collect();
             timestamps.sort();
             timestamps.dedup();
             timestamps.push(day_end); // Add end of day as final boundary
@@ -427,9 +389,7 @@ where
                 let period_end = timestamps[i + 1];
 
                 // Apply all snapshots that occur at period_start to update market states
-                while snapshot_idx < snapshots.len()
-                    && snapshots[snapshot_idx].timestamp == period_start
-                {
+                while snapshot_idx < snapshots.len() && snapshots[snapshot_idx].timestamp == period_start {
                     let snap = &snapshots[snapshot_idx];
                     market_states.insert(
                         snap.market_id.clone(),
@@ -464,14 +424,12 @@ where
             // Calculate points from accumulated dollar-seconds
             // points = dollar_seconds × (points_per_usd_per_day / seconds_per_day)
             if !total_supply_usd_seconds.is_zero() {
-                let supply_points_decimal =
-                    &total_supply_usd_seconds * &supply_points_per_usd_per_second;
+                let supply_points_decimal = &total_supply_usd_seconds * &supply_points_per_usd_per_second;
                 activity.supply_points = supply_points_decimal.round(0).to_i32().unwrap_or(0);
             }
 
             if !total_borrow_usd_seconds.is_zero() {
-                let borrow_points_decimal =
-                    &total_borrow_usd_seconds * &borrow_points_per_usd_per_second;
+                let borrow_points_decimal = &total_borrow_usd_seconds * &borrow_points_per_usd_per_second;
                 activity.borrow_points = borrow_points_decimal.round(0).to_i32().unwrap_or(0);
             }
         }
@@ -514,10 +472,7 @@ where
     }
 
     /// Calculate referral points for referrers
-    async fn calculate_referral_points(
-        &self,
-        user_activities: &mut HashMap<String, UserDailyActivity>,
-    ) -> Result<()> {
+    async fn calculate_referral_points(&self, user_activities: &mut HashMap<String, UserDailyActivity>) -> Result<()> {
         let referral_percentage = BigDecimal::try_from(self.config.referral_percentage)
             .context("Failed to convert referral_percentage to BigDecimal")?;
 
@@ -527,10 +482,7 @@ where
         // Group referrals by referrer
         let mut referrals_by_referrer: HashMap<String, Vec<String>> = HashMap::new();
         for referral in all_referrals {
-            referrals_by_referrer
-                .entry(referral.referred_by_address.clone())
-                .or_default()
-                .push(referral.user_address);
+            referrals_by_referrer.entry(referral.referred_by_address.clone()).or_default().push(referral.user_address);
         }
 
         // Calculate referral points for each referrer
@@ -587,18 +539,14 @@ where
         // Step 1: Create snapshots for users with activity today
         for activity in user_activities.values() {
             // Fetch the previous day's snapshot to get cumulative total
-            let previous_total = match self
-                .points_repository
-                .get_snapshot(&activity.address, previous_date, season_id)
-                .await?
-            {
-                Some(prev_snapshot) => prev_snapshot.total_points,
-                None => 0, // No previous snapshot means this is their first day
-            };
+            let previous_total =
+                match self.points_repository.get_snapshot(&activity.address, previous_date, season_id).await? {
+                    Some(prev_snapshot) => prev_snapshot.total_points,
+                    None => 0, // No previous snapshot means this is their first day
+                };
 
             // Calculate cumulative total: previous total + today's points (base + referral)
-            let cumulative_total =
-                previous_total + activity.base_points_total + activity.referral_points;
+            let cumulative_total = previous_total + activity.base_points_total + activity.referral_points;
 
             snapshots.push(NewPointsSnapshot {
                 address: activity.address.clone(),
@@ -618,8 +566,7 @@ where
         }
 
         // Step 2: Get all users who had snapshots on the previous day but no activity today
-        let all_previous_snapshots =
-            self.points_repository.get_snapshots_by_date(previous_date, season_id).await?;
+        let all_previous_snapshots = self.points_repository.get_snapshots_by_date(previous_date, season_id).await?;
 
         for prev_snapshot in all_previous_snapshots {
             // Skip users who already have activity today
@@ -662,8 +609,7 @@ where
 mod tests {
     use super::*;
     use crate::repository::{
-        MockAccountTransactionRepositoryTrait, MockLendingRepositoryTrait,
-        MockPointsRepositoryTrait,
+        MockAccountTransactionRepositoryTrait, MockLendingRepositoryTrait, MockPointsRepositoryTrait,
     };
     use crate::services::price::token_service::MockTokenServiceTrait;
     use bigdecimal::BigDecimal;
@@ -818,10 +764,7 @@ mod tests {
             ])
         });
 
-        setup
-            .lending_repo
-            .expect_get_position_snapshots_in_period()
-            .returning(move |_, _| Ok(snapshots.clone()));
+        setup.lending_repo.expect_get_position_snapshots_in_period().returning(move |_, _| Ok(snapshots.clone()));
 
         let service = setup
             .with_no_swaps()
@@ -887,10 +830,7 @@ mod tests {
             ])
         });
 
-        setup
-            .lending_repo
-            .expect_get_position_snapshots_in_period()
-            .returning(move |_, _| Ok(snapshots.clone()));
+        setup.lending_repo.expect_get_position_snapshots_in_period().returning(move |_, _| Ok(snapshots.clone()));
 
         let service = setup
             .with_no_swaps()
@@ -948,10 +888,7 @@ mod tests {
             ])
         });
 
-        setup
-            .lending_repo
-            .expect_get_position_snapshots_in_period()
-            .returning(move |_, _| Ok(snapshots.clone()));
+        setup.lending_repo.expect_get_position_snapshots_in_period().returning(move |_, _| Ok(snapshots.clone()));
 
         let service = setup
             .with_no_swaps()
@@ -1016,10 +953,7 @@ mod tests {
             ])
         });
 
-        setup
-            .lending_repo
-            .expect_get_position_snapshots_in_period()
-            .returning(move |_, _| Ok(snapshots.clone()));
+        setup.lending_repo.expect_get_position_snapshots_in_period().returning(move |_, _| Ok(snapshots.clone()));
 
         let service = setup
             .with_no_swaps()
@@ -1081,10 +1015,7 @@ mod tests {
             ])
         });
 
-        setup
-            .lending_repo
-            .expect_get_position_snapshots_in_period()
-            .returning(move |_, _| Ok(snapshots.clone()));
+        setup.lending_repo.expect_get_position_snapshots_in_period().returning(move |_, _| Ok(snapshots.clone()));
 
         let service = setup
             .with_no_swaps()

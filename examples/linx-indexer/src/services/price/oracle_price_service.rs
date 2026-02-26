@@ -6,9 +6,7 @@ use bigdecimal::BigDecimal;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{
-    constants::ALPH_TOKEN_ID, extract_bigdecimal_from_object, random_tx_id, string_to_hex,
-};
+use crate::{constants::ALPH_TOKEN_ID, extract_bigdecimal_from_object, random_tx_id, string_to_hex};
 
 const TEST_BTC_TOKEN_ID: &str = "0712ee40be418ed0105b1b9c1f255a5e3fa0ef40004f400f216df05eb014c600";
 const TEST_USDT_TOKEN_ID: &str = "79804da1cd63c4575675b6391d956f4745591c65a30aa058ae6bd0a07ce64b00";
@@ -52,8 +50,7 @@ pub struct OraclePriceService {
 
 impl OraclePriceService {
     pub fn new(network: Network, dia_oracle_address: String, group_index: u32) -> Self {
-        let client: Arc<dyn ContractsProvider + Send + Sync> =
-            Arc::new(Client::new(network.clone()));
+        let client: Arc<dyn ContractsProvider + Send + Sync> = Arc::new(Client::new(network.clone()));
         Self { client, dia_oracle_address, group_index, network }
     }
 
@@ -98,20 +95,15 @@ impl OraclePriceService {
                 anyhow::bail!("Contract call failed for key {}", key);
             }
             CallContractResultType::CallContractSucceeded => {
-                let returns = result.returns.ok_or_else(|| {
-                    anyhow::anyhow!("No returns in contract call for key {}", key)
-                })?;
+                let returns =
+                    result.returns.ok_or_else(|| anyhow::anyhow!("No returns in contract call for key {}", key))?;
                 if returns.len() != 2 {
                     tracing::error!(
                         "Unexpected number of return values for key {}: expected 2, got {}",
                         key,
                         returns.len()
                     );
-                    anyhow::bail!(
-                        "Expected 2 return values for key {}, got {}",
-                        key,
-                        returns.len()
-                    );
+                    anyhow::bail!("Expected 2 return values for key {}, got {}", key, returns.len());
                 }
                 Ok((
                     extract_bigdecimal_from_object(&returns[0], "value")
@@ -259,10 +251,7 @@ mod tests {
         let mut mock_client = MockTestContractCaller::new();
 
         // Mock contract call returns network error
-        mock_client
-            .expect_call_contract()
-            .times(1)
-            .returning(|_| Err(anyhow::anyhow!("Network error")));
+        mock_client.expect_call_contract().times(1).returning(|_| Err(anyhow::anyhow!("Network error")));
 
         let service = OraclePriceService::new_with_client(
             Arc::new(mock_client),

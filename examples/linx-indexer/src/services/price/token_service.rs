@@ -34,12 +34,7 @@ pub struct TokenService {
 
 #[cfg_attr(test, automock)]
 impl TokenService {
-    pub fn new(
-        network: Network,
-        linx_api_url: String,
-        dia_oracle_address: String,
-        linx_group: u32,
-    ) -> Self {
+    pub fn new(network: Network, linx_api_url: String, dia_oracle_address: String, linx_group: u32) -> Self {
         let oracle_service = OraclePriceService::new(network.clone(), dia_oracle_address, linx_group);
         let linx_service = LinxPriceService::new(linx_api_url, network);
         let cache = Arc::new(RwLock::new(HashMap::new()));
@@ -71,11 +66,7 @@ impl TokenService {
             }
             Err(oracle_err) => {
                 // Oracle failed (token not supported or error), try Linx API
-                tracing::debug!(
-                    "Oracle fetch failed for token {}: {}, trying Linx API",
-                    token_id,
-                    oracle_err
-                );
+                tracing::debug!("Oracle fetch failed for token {}: {}, trying Linx API", token_id, oracle_err);
                 self.linx_service.get_token_price(token_id).await.context(format!(
                     "Both oracle and Linx API failed for token {}. Oracle error: {}",
                     token_id, oracle_err

@@ -76,24 +76,22 @@ impl ProcessorTrait for LendingProcessor {
             events.extend(block_events);
         }
 
-        Ok(ProcessorOutput::Custom(Arc::new(LendingProcessorOutput {
-            markets: new_markets,
-            events,
-        })))
+        Ok(ProcessorOutput::Custom(Arc::new(LendingProcessorOutput { markets: new_markets, events })))
     }
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
         if let ProcessorOutput::Custom(custom) = output
-            && let Some(lending_output) = custom.as_any().downcast_ref::<LendingProcessorOutput>() {
-                if !lending_output.markets.is_empty() {
-                    self.lending_repository.insert_markets(&lending_output.markets).await?;
-                    tracing::info!("Inserted {} new markets", lending_output.markets.len());
-                }
-                if !lending_output.events.is_empty() {
-                    self.lending_repository.insert_lending_events(&lending_output.events).await?;
-                    tracing::info!("Inserted {} new events", lending_output.events.len());
-                }
+            && let Some(lending_output) = custom.as_any().downcast_ref::<LendingProcessorOutput>()
+        {
+            if !lending_output.markets.is_empty() {
+                self.lending_repository.insert_markets(&lending_output.markets).await?;
+                tracing::info!("Inserted {} new markets", lending_output.markets.len());
             }
+            if !lending_output.events.is_empty() {
+                self.lending_repository.insert_lending_events(&lending_output.events).await?;
+                tracing::info!("Inserted {} new events", lending_output.events.len());
+            }
+        }
         Ok(())
     }
 }
@@ -123,11 +121,7 @@ impl LendingProcessor {
             .collect()
     }
 
-    fn parse_market_created_event(
-        &self,
-        block: &RichBlockEntry,
-        event: &ContractEventByBlockHash,
-    ) -> Option<Market> {
+    fn parse_market_created_event(&self, block: &RichBlockEntry, event: &ContractEventByBlockHash) -> Option<Market> {
         if event.contract_address == self.linx_address && event.event_index == 4 {
             Some(Market {
                 id: self.extract_string_field(&event.fields, 0)?,
@@ -137,9 +131,7 @@ impl LendingProcessor {
                 oracle: self.extract_string_field(&event.fields, 4)?,
                 irm: self.extract_string_field(&event.fields, 5)?,
                 ltv: self.extract_bigdecimal_field(&event.fields, 6)?,
-                created_at: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                    .unwrap_or_default()
-                    .naive_utc(),
+                created_at: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             })
         } else {
             None
@@ -154,9 +146,7 @@ impl LendingProcessor {
         block_and_events
             .events
             .iter()
-            .filter_map(|event| {
-                self.parse_lending_event(&block_and_events.block, event, markets_map)
-            })
+            .filter_map(|event| self.parse_lending_event(&block_and_events.block, event, markets_map))
             .collect()
     }
 
@@ -205,9 +195,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -231,9 +219,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -257,9 +243,7 @@ impl LendingProcessor {
             shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -283,9 +267,7 @@ impl LendingProcessor {
             shares: BigDecimal::from(0),
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -309,9 +291,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -335,9 +315,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 5)?,
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -361,9 +339,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 4)?, // repaidShares
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -390,9 +366,7 @@ impl LendingProcessor {
             shares: self.extract_bigdecimal_field(&event.fields, 3)?, // feeShares
             transaction_id: event.tx_id.clone(),
             event_index: event.event_index,
-            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0)
-                .unwrap_or_default()
-                .naive_utc(),
+            block_time: chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc(),
             created_at: chrono::Utc::now().naive_utc(),
             fields: serde_json::to_value(&event.fields).unwrap_or_default(),
         })
@@ -402,11 +376,7 @@ impl LendingProcessor {
         fields.get(index)?.value.as_str().map(|s| s.to_string())
     }
 
-    fn extract_bigdecimal_field(
-        &self,
-        fields: &[EventField],
-        index: usize,
-    ) -> Option<bigdecimal::BigDecimal> {
+    fn extract_bigdecimal_field(&self, fields: &[EventField], index: usize) -> Option<bigdecimal::BigDecimal> {
         fields.get(index)?.value.as_str().and_then(|s| s.parse().ok())
     }
 }

@@ -38,10 +38,7 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, Default, Deserialize, ToSchema, Serialize)]
 pub struct Pagination {
-    #[serde(
-        default = "Pagination::default_offset",
-        deserialize_with = "deserialize_number_from_string"
-    )]
+    #[serde(default = "Pagination::default_offset", deserialize_with = "deserialize_number_from_string")]
     pub offset: i64,
 
     #[serde(deserialize_with = "deserialize_number_from_string")]
@@ -115,16 +112,13 @@ async fn health_check(State(state): State<AppState>) -> Result<impl IntoResponse
     let block = get_latest_block(&state.db, from_group as i64, to_group as i64).await?;
     let block_height = block.map(|b| b.height);
 
-    block_height.map_or(
-        Err(AppError::Internal(anyhow::anyhow!("No block found in database"))),
-        |h| {
-            if remote_height - h > 3 {
-                Err(AppError::Internal(anyhow::anyhow!("Indexer is too far behind the node")))
-            } else {
-                Ok(())
-            }
-        },
-    )
+    block_height.map_or(Err(AppError::Internal(anyhow::anyhow!("No block found in database"))), |h| {
+        if remote_height - h > 3 {
+            Err(AppError::Internal(anyhow::anyhow!("Indexer is too far behind the node")))
+        } else {
+            Ok(())
+        }
+    })
 }
 
 #[allow(clippy::let_and_return)]

@@ -34,7 +34,6 @@ diesel::table! {
     }
 }
 
-
 diesel::table! {
     events (id) {
         id -> Text,
@@ -218,7 +217,6 @@ diesel::table! {
     }
 }
 
-
 diesel::table! {
     transactions (tx_hash) {
         tx_hash -> Text,
@@ -234,7 +232,6 @@ diesel::table! {
         block_hash -> Nullable<Text>,
     }
 }
-
 
 diesel::table! {
     user_referrals (id) {

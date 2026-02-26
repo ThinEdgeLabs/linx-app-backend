@@ -20,11 +20,7 @@ use diesel::ExpressionMethods;
 use diesel_async::{scoped_futures::ScopedFutureExt, AsyncConnection, RunQueryDsl};
 
 /// Insert block and events into the database.
-pub async fn insert_block_and_events(
-    db: Arc<DbPool>,
-    block: BlockModel,
-    events: Vec<EventModel>,
-) -> Result<()> {
+pub async fn insert_block_and_events(db: Arc<DbPool>, block: BlockModel, events: Vec<EventModel>) -> Result<()> {
     let mut conn = db.get().await?;
     conn.transaction(|conn| {
         async move {
@@ -83,11 +79,7 @@ pub async fn update_main_chain(
 }
 
 /// Update main chain status of block and transactions related to a list of block hashes.
-pub async fn update_main_chain_status(
-    db: Arc<DbPool>,
-    block_hashes: Vec<String>,
-    main_chain: bool,
-) -> Result<()> {
+pub async fn update_main_chain_status(db: Arc<DbPool>, block_hashes: Vec<String>, main_chain: bool) -> Result<()> {
     let mut conn = db.get().await?;
     if block_hashes.is_empty() {
         return Ok(());
@@ -95,16 +87,12 @@ pub async fn update_main_chain_status(
     for block_hash in block_hashes {
         conn.transaction(|conn| {
             async move {
+                diesel::update(crate::schema::blocks::table.filter(crate::schema::blocks::hash.eq(block_hash.clone())))
+                    .set(crate::schema::blocks::main_chain.eq(main_chain))
+                    .execute(conn)
+                    .await?;
                 diesel::update(
-                    crate::schema::blocks::table
-                        .filter(crate::schema::blocks::hash.eq(block_hash.clone())),
-                )
-                .set(crate::schema::blocks::main_chain.eq(main_chain))
-                .execute(conn)
-                .await?;
-                diesel::update(
-                    crate::schema::transactions::table
-                        .filter(crate::schema::transactions::block_hash.eq(block_hash)),
+                    crate::schema::transactions::table.filter(crate::schema::transactions::block_hash.eq(block_hash)),
                 )
                 .set(crate::schema::transactions::main_chain.eq(main_chain))
                 .execute(conn)
@@ -118,18 +106,13 @@ pub async fn update_main_chain_status(
     Ok(())
 }
 
-pub async fn get_block_transactions(
-    db: Arc<DbPool>,
-    block_hash_value: BlockHash,
-) -> Result<Vec<TransactionModel>> {
+pub async fn get_block_transactions(db: Arc<DbPool>, block_hash_value: BlockHash) -> Result<Vec<TransactionModel>> {
     let block_model = get_block_by_hash(db.clone(), &block_hash_value).await?;
 
     if let Some(block_model) = block_model {
         let mut conn = db.get().await?;
-        let transaction_models = TransactionModel::belonging_to(&block_model)
-            .select(TransactionModel::as_select())
-            .load(&mut conn)
-            .await?;
+        let transaction_models =
+            TransactionModel::belonging_to(&block_model).select(TransactionModel::as_select()).load(&mut conn).await?;
         Ok(transaction_models)
     } else {
         Err(RepositoryError::BlockNotFound(block_hash_value).into())

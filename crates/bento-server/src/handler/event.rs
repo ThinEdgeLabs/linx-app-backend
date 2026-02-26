@@ -41,13 +41,8 @@ pub async fn get_events_by_contract_handler(
 ) -> Result<Json<Vec<EventModel>>, AppError> {
     let EventByContractQuery { contract, pagination } = query;
     let db = state.db;
-    let event_models = get_events_by_contract(
-        db,
-        contract.to_string(),
-        pagination.get_limit(),
-        pagination.get_offset(),
-    )
-    .await?;
+    let event_models =
+        get_events_by_contract(db, contract.to_string(), pagination.get_limit(), pagination.get_offset()).await?;
     Ok(Json(event_models))
 }
 
@@ -59,9 +54,7 @@ pub async fn get_events_by_tx_id_handler(
     let db = state.db;
 
     let EventByTxIdQuery { tx_id, pagination } = query;
-    let event_models =
-        get_events_by_tx(db, tx_id.to_string(), pagination.get_limit(), pagination.get_offset())
-            .await?;
+    let event_models = get_events_by_tx(db, tx_id.to_string(), pagination.get_limit(), pagination.get_offset()).await?;
 
     let events: Vec<EventDto> = event_models.into_iter().map(|event| event.into()).collect();
     Ok(Json(events))

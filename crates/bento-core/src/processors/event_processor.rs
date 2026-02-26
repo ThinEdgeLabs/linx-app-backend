@@ -5,16 +5,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bento_trait::processor::ProcessorTrait;
 use bento_types::{
-    convert_bwe_to_event_models, processors::ProcessorOutput, repository::insert_events_to_db,
-    BlockAndEvents,
+    convert_bwe_to_event_models, processors::ProcessorOutput, repository::insert_events_to_db, BlockAndEvents,
 };
 
 use crate::{config::ProcessorConfig, db::DbPool, ProcessorFactory};
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>| {
-        Box::new(EventProcessor::new(db_pool))
-    }
+    |db_pool, _config: Option<Arc<dyn bento_types::config::AppConfigTrait>>| Box::new(EventProcessor::new(db_pool))
 }
 
 pub struct EventProcessor {

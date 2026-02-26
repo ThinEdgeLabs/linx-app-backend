@@ -8,9 +8,7 @@ use async_trait::async_trait;
 use bento_core::ProcessorFactory;
 use bento_core::db::DbPool;
 use bento_trait::processor::ProcessorTrait;
-use bento_types::{
-    BlockAndEvents, processors::ProcessorOutput, utils::timestamp_millis_to_naive_datetime,
-};
+use bento_types::{BlockAndEvents, processors::ProcessorOutput, utils::timestamp_millis_to_naive_datetime};
 use bigdecimal::BigDecimal;
 
 use crate::config::AppConfig;
@@ -20,9 +18,7 @@ use crate::processors::classifier::{TransactionCategory, TransactionClassifier};
 use crate::repository::AccountTransactionRepository;
 
 pub fn processor_factory() -> ProcessorFactory {
-    |db_pool, config: Option<Arc<dyn AppConfigTrait>>| {
-        Box::new(TransferProcessor::new(db_pool, config))
-    }
+    |db_pool, config: Option<Arc<dyn AppConfigTrait>>| Box::new(TransferProcessor::new(db_pool, config))
 }
 
 pub struct TransferProcessor {
@@ -90,9 +86,7 @@ impl ProcessorTrait for TransferProcessor {
                     .transactions
                     .iter()
                     .filter(|tx| self.classifier.classify(tx) == TransactionCategory::Transfer)
-                    .flat_map(|tx| {
-                        extract_token_transfers(tx, &el.block, &self.gas_payer_addresses)
-                    })
+                    .flat_map(|tx| extract_token_transfers(tx, &el.block, &self.gas_payer_addresses))
             })
             .collect();
 
@@ -101,8 +95,7 @@ impl ProcessorTrait for TransferProcessor {
 
     async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
         if let ProcessorOutput::Custom(custom) = output {
-            if let Some(transfer_output) = custom.as_any().downcast_ref::<TransferProcessorOutput>()
-            {
+            if let Some(transfer_output) = custom.as_any().downcast_ref::<TransferProcessorOutput>() {
                 let transfers = &transfer_output.transfers;
                 if !transfers.is_empty() {
                     self.repository.insert_transactions(transfers).await?;
@@ -133,8 +126,7 @@ fn extract_token_transfers(
         input_addresses.insert(input.address.clone());
 
         let alph_amount = input.atto_alph_amount.parse::<BigDecimal>().unwrap_or_default();
-        *input_map.entry((input.address.clone(), ALPH_TOKEN_ID.to_string())).or_default() +=
-            alph_amount;
+        *input_map.entry((input.address.clone(), ALPH_TOKEN_ID.to_string())).or_default() += alph_amount;
 
         for token in &input.tokens {
             let amount = token.amount.parse::<BigDecimal>().unwrap_or_default();
@@ -158,8 +150,7 @@ fn extract_token_transfers(
     // Step 2: Parse outputs
     for output in &tx.unsigned.fixed_outputs {
         let alph_amount = output.atto_alph_amount.parse::<BigDecimal>().unwrap_or_default();
-        *output_map.entry((output.address.clone(), ALPH_TOKEN_ID.to_string())).or_default() +=
-            alph_amount;
+        *output_map.entry((output.address.clone(), ALPH_TOKEN_ID.to_string())).or_default() += alph_amount;
 
         for token in &output.tokens {
             let amount = token.amount.parse::<BigDecimal>().unwrap_or_default();
@@ -183,8 +174,7 @@ fn extract_token_transfers(
             continue;
         }
 
-        let input_amount =
-            input_map.get(&(to_addr.clone(), token_id.clone())).cloned().unwrap_or_default();
+        let input_amount = input_map.get(&(to_addr.clone(), token_id.clone())).cloned().unwrap_or_default();
         if input_amount >= *out_amount {
             continue;
         }
@@ -289,8 +279,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d"
-                    .to_string(),
+                tx_id: "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json.clone(),
             }
@@ -305,8 +294,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d"
-                    .to_string(),
+                tx_id: "69e487675c435dd99c65d3d5d0b9dcfd8c4d6c7f1cbc94fdc8f960e806c6cd5d".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json,
             }
@@ -341,8 +329,7 @@ mod tests {
         assert_eq!(transfers.len(), 2);
 
         let transfer_details = TransferDetails {
-            token_id: "bb440a66dcffdb75862b6ad6df14d659aa6d1ba8490f6282708aa44ebc80a100"
-                .to_string(),
+            token_id: "bb440a66dcffdb75862b6ad6df14d659aa6d1ba8490f6282708aa44ebc80a100".to_string(),
             from_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
             to_address: "19tvYk2qzrSnb3SjVzqxE7EaybVrtxEGGpWYDC6dBcsMa".to_string(),
             amount: BigDecimal::from_i64(1000000000000000).unwrap(),
@@ -359,8 +346,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "630fefe2f0fca6eb3defcdb665fe1943b5798c0e7507415528ab62ddd01043d6"
-                    .to_string(),
+                tx_id: "630fefe2f0fca6eb3defcdb665fe1943b5798c0e7507415528ab62ddd01043d6".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json.clone(),
             }
@@ -375,8 +361,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "630fefe2f0fca6eb3defcdb665fe1943b5798c0e7507415528ab62ddd01043d6"
-                    .to_string(),
+                tx_id: "630fefe2f0fca6eb3defcdb665fe1943b5798c0e7507415528ab62ddd01043d6".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json,
             }
@@ -387,8 +372,7 @@ mod tests {
     fn test_extract_token_transfer_when_fungible_token_transfer_with_gas_payer() {
         // Given
         let block = load_block_fixture("block_entry.json");
-        let transaction: Transaction =
-            load_tx_fixture("fungible_token_transfer_with_gas_payer_tx.json");
+        let transaction: Transaction = load_tx_fixture("fungible_token_transfer_with_gas_payer_tx.json");
         let gas_payer_addresses = load_gas_payer_addresses_fixture();
 
         // When
@@ -398,8 +382,7 @@ mod tests {
         assert_eq!(transfers.len(), 2);
 
         let transfer_details = TransferDetails {
-            token_id: "b2d71c116408ae47b931482a440f675dc9ea64453db24ee931dacd578cae9002"
-                .to_string(),
+            token_id: "b2d71c116408ae47b931482a440f675dc9ea64453db24ee931dacd578cae9002".to_string(),
             from_address: "1CsPJka1BwnLGEEwtKCF9nWLKyRwNwEq5G3Dagij2SyPU".to_string(),
             to_address: "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E".to_string(),
             amount: BigDecimal::from_i64(2).unwrap(),
@@ -416,8 +399,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "10bb1edc2dfc3239f14d0917efb8e9b1aa8e3921a4e36fff9d40fc5ec7cf0ebb"
-                    .to_string(),
+                tx_id: "10bb1edc2dfc3239f14d0917efb8e9b1aa8e3921a4e36fff9d40fc5ec7cf0ebb".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json.clone(),
             }
@@ -432,8 +414,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "10bb1edc2dfc3239f14d0917efb8e9b1aa8e3921a4e36fff9d40fc5ec7cf0ebb"
-                    .to_string(),
+                tx_id: "10bb1edc2dfc3239f14d0917efb8e9b1aa8e3921a4e36fff9d40fc5ec7cf0ebb".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json,
             }
@@ -471,8 +452,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "33fb4ca98b33b57e063298d88acf45bf95ec10d41c43b90e3b8fb3dbfed4ad1f"
-                    .to_string(),
+                tx_id: "33fb4ca98b33b57e063298d88acf45bf95ec10d41c43b90e3b8fb3dbfed4ad1f".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json.clone(),
             }
@@ -487,8 +467,7 @@ mod tests {
                 from_group: block.chain_from as i16,
                 to_group: block.chain_to as i16,
                 block_height: block.height,
-                tx_id: "33fb4ca98b33b57e063298d88acf45bf95ec10d41c43b90e3b8fb3dbfed4ad1f"
-                    .to_string(),
+                tx_id: "33fb4ca98b33b57e063298d88acf45bf95ec10d41c43b90e3b8fb3dbfed4ad1f".to_string(),
                 timestamp: timestamp_millis_to_naive_datetime(block.timestamp),
                 details: details_json,
             }
@@ -509,22 +488,19 @@ mod tests {
         assert_eq!(transfers.len(), 6);
 
         // Helper function to deserialize and check transfer details
-        let check_transfer = |el: &NewAccountTransaction| -> Option<TransferDetails> {
-            serde_json::from_value(el.details.clone()).ok()
-        };
+        let check_transfer =
+            |el: &NewAccountTransaction| -> Option<TransferDetails> { serde_json::from_value(el.details.clone()).ok() };
 
         // Check first transfer (token 6b89...) - sender record
         assert!(
             transfers.iter().any(|el| {
                 if let Some(details) = check_transfer(el) {
-                    details.token_id
-                        == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
+                    details.token_id == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
                         && details.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(10000000000).unwrap()
                         && el.address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }
@@ -535,14 +511,12 @@ mod tests {
         assert!(
             transfers.iter().any(|el| {
                 if let Some(details) = check_transfer(el) {
-                    details.token_id
-                        == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
+                    details.token_id == "6b894505030718e45cdf7c59be1f8c6167542e43522e95303871e8280037b000"
                         && details.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(10000000000).unwrap()
                         && el.address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }
@@ -554,14 +528,12 @@ mod tests {
         assert!(
             transfers.iter().any(|el| {
                 if let Some(details) = check_transfer(el) {
-                    details.token_id
-                        == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
+                    details.token_id == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
                         && details.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(100000000000000000).unwrap()
                         && el.address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }
@@ -572,14 +544,12 @@ mod tests {
         assert!(
             transfers.iter().any(|el| {
                 if let Some(details) = check_transfer(el) {
-                    details.token_id
-                        == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
+                    details.token_id == "cad22f7c98f13fe249c25199c61190a9fb4341f8af9b1c17fcff4cd4b2c3d200"
                         && details.from_address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(100000000000000000).unwrap()
                         && el.address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }
@@ -596,8 +566,7 @@ mod tests {
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(100000000000000000).unwrap()
                         && el.address == "19sJ8t5rtjHyJKjYAQ5ndbwxpjc7q5aLGEGF1mjw4cfZ4"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }
@@ -613,8 +582,7 @@ mod tests {
                         && details.to_address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
                         && details.amount == BigDecimal::from_i64(100000000000000000).unwrap()
                         && el.address == "13yjxHVqCPZmw2AwcbhchaegL4YoKXdQP6oLFvJhF4Zqw"
-                        && el.tx_id
-                            == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
+                        && el.tx_id == "cdccdd80af1acbbf649028fca799ad1e8bd01dde03fa13b7f43a6ae37668201f"
                 } else {
                     false
                 }

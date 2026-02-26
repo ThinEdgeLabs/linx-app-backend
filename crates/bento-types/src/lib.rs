@@ -345,17 +345,10 @@ mod tests {
     #[test]
     fn test_hash_display() {
         let hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(
-            format!("{}", hash),
-            "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850"
-        );
+        assert_eq!(format!("{}", hash), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
 
-        let block_hash =
-            "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(
-            format!("{}", block_hash),
-            "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850"
-        );
+        let block_hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
+        assert_eq!(format!("{}", block_hash), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
     }
     #[test]
     fn test_block_entry_deser() {
@@ -457,8 +450,7 @@ mod tests {
             ]
         });
 
-        let blocks_and_events: BlocksAndEventsPerTimestampRange =
-            serde_json::from_value(json_data).unwrap();
+        let blocks_and_events: BlocksAndEventsPerTimestampRange = serde_json::from_value(json_data).unwrap();
 
         assert_eq!(blocks_and_events.blocks_and_events.len(), 1);
         let block_and_event = &blocks_and_events.blocks_and_events[0][0];
@@ -489,14 +481,8 @@ mod tests {
             }
         );
         let event: Event = serde_json::from_value(json_data).unwrap();
-        assert_eq!(
-            event.contract_address,
-            "tgx7VNFoP9DJiFMFgXXtafQZkUvyEdDHT9ryamHJZC9M".to_string()
-        );
-        assert_eq!(
-            event.tx_id,
-            "585cda67fae0756b9a43ff30e3738e0ee4b7ed4286c66e2a51b9822f3dfa8899".to_string()
-        );
+        assert_eq!(event.contract_address, "tgx7VNFoP9DJiFMFgXXtafQZkUvyEdDHT9ryamHJZC9M".to_string());
+        assert_eq!(event.tx_id, "585cda67fae0756b9a43ff30e3738e0ee4b7ed4286c66e2a51b9822f3dfa8899".to_string());
         assert_eq!(event.event_index, -1);
         assert_eq!(event.fields.len(), 3);
 

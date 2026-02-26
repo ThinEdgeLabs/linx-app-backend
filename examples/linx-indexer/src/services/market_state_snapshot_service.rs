@@ -3,7 +3,7 @@ use crate::repository::LendingRepository;
 use anyhow::{Context, Result};
 use bento_core::{Client, DbPool};
 use bento_trait::stage::ContractsProvider;
-use bento_types::{network::Network, CallContractParams, CallContractResultType};
+use bento_types::{CallContractParams, CallContractResultType, network::Network};
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;
 
@@ -15,12 +15,7 @@ pub struct MarketStateSnapshotService {
 }
 
 impl MarketStateSnapshotService {
-    pub fn new(
-        db_pool: Arc<DbPool>,
-        network: Network,
-        linx_address: String,
-        linx_group: u32,
-    ) -> Self {
+    pub fn new(db_pool: Arc<DbPool>, network: Network, linx_address: String, linx_group: u32) -> Self {
         let client = Client::new(network);
 
         Self { lending_repository: LendingRepository::new(db_pool), client, linx_address, linx_group }
@@ -103,19 +98,14 @@ impl MarketStateSnapshotService {
             input_assets: None,
         };
 
-        let result = self
-            .client
-            .call_contract(params)
-            .await
-            .context("Failed to call contract")?;
+        let result = self.client.call_contract(params).await.context("Failed to call contract")?;
 
         match result.result_type {
             CallContractResultType::CallContractFailed => {
                 anyhow::bail!("Contract call failed for market {}", market_id);
             }
             CallContractResultType::CallContractSucceeded => {
-                let returns =
-                    result.returns.ok_or_else(|| anyhow::anyhow!("No returns in contract call"))?;
+                let returns = result.returns.ok_or_else(|| anyhow::anyhow!("No returns in contract call"))?;
 
                 if returns.len() != 6 {
                     anyhow::bail!("Expected 6 return values, got {}", returns.len());

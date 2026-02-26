@@ -61,8 +61,7 @@ fn testnet_token_info() -> HashMap<String, TokenInfo> {
             symbol: "tBTC".to_string(),
             decimals: 18,
             description: "".to_string(),
-            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TBTC.png"
-                .to_string(),
+            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TBTC.png".to_string(),
             price_usd: 0.0, // Price fetched from oracle
         },
     );
@@ -76,8 +75,7 @@ fn testnet_token_info() -> HashMap<String, TokenInfo> {
             symbol: "tUSDT".to_string(),
             decimals: 6,
             description: "".to_string(),
-            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TUSDT.png"
-                .to_string(),
+            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TUSDT.png".to_string(),
             price_usd: 0.0, // Price fetched from oracle
         },
     );
@@ -91,8 +89,7 @@ fn testnet_token_info() -> HashMap<String, TokenInfo> {
             symbol: "tETH".to_string(),
             decimals: 18,
             description: "".to_string(),
-            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TETH.png"
-                .to_string(),
+            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TETH.png".to_string(),
             price_usd: 0.0, // Price fetched from oracle
         },
     );
@@ -106,8 +103,7 @@ fn testnet_token_info() -> HashMap<String, TokenInfo> {
             symbol: "tUSDC".to_string(),
             decimals: 6,
             description: "".to_string(),
-            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TUSDC.png"
-                .to_string(),
+            logo_uri: "https://raw.githubusercontent.com/alephium/token-list/master/logos/TUSDC.png".to_string(),
             price_usd: 0.0, // Price fetched from oracle
         },
     );
@@ -123,10 +119,7 @@ pub struct LinxPriceService {
 
 impl LinxPriceService {
     pub fn new(api_url: String, network: Network) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-            .expect("Failed to build HTTP client");
+        let client = Client::builder().timeout(Duration::from_secs(5)).build().expect("Failed to build HTTP client");
 
         Self { api_url, client, network }
     }
@@ -135,10 +128,7 @@ impl LinxPriceService {
     pub async fn get_token_info(&self, token_id: &str) -> anyhow::Result<TokenInfo> {
         let tokens = self.fetch_all_tokens().await?;
 
-        tokens
-            .get(token_id)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Token {} not found in Linx API", token_id))
+        tokens.get(token_id).cloned().ok_or_else(|| anyhow::anyhow!("Token {} not found in Linx API", token_id))
     }
 
     /// Get price for a single token by its token ID.
@@ -158,10 +148,7 @@ impl LinxPriceService {
 
     /// Get prices for multiple tokens at once.
     /// Returns a HashMap of token_id -> price in USD.
-    pub async fn get_multiple_prices(
-        &self,
-        token_ids: &[String],
-    ) -> anyhow::Result<HashMap<String, BigDecimal>> {
+    pub async fn get_multiple_prices(&self, token_ids: &[String]) -> anyhow::Result<HashMap<String, BigDecimal>> {
         let all_tokens = self.fetch_all_tokens().await?;
 
         let mut result = HashMap::new();
@@ -185,19 +172,13 @@ impl LinxPriceService {
         }
 
         // Fetch from API for mainnet and custom networks
-        let response = self
-            .client
-            .get(&self.api_url)
-            .send()
-            .await
-            .context("Failed to fetch tokens from Linx API")?;
+        let response = self.client.get(&self.api_url).send().await.context("Failed to fetch tokens from Linx API")?;
 
         if !response.status().is_success() {
             anyhow::bail!("Linx API returned error status: {}", response.status());
         }
 
-        let tokens: Vec<TokenInfo> =
-            response.json().await.context("Failed to parse Linx API response")?;
+        let tokens: Vec<TokenInfo> = response.json().await.context("Failed to parse Linx API response")?;
 
         let mut token_map = HashMap::new();
         for token in tokens {
@@ -215,10 +196,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default since it requires network access
     async fn test_get_token_price_real_api() {
-        let service = LinxPriceService::new(
-            "https://api.linxlabs.org/tokens".to_string(),
-            Network::Mainnet,
-        );
+        let service = LinxPriceService::new("https://api.linxlabs.org/tokens".to_string(), Network::Mainnet);
 
         // ALPH token ID
         let alph_token_id = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -233,10 +211,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default since it requires network access
     async fn test_get_multiple_prices_real_api() {
-        let service = LinxPriceService::new(
-            "https://api.linxlabs.org/tokens".to_string(),
-            Network::Mainnet,
-        );
+        let service = LinxPriceService::new("https://api.linxlabs.org/tokens".to_string(), Network::Mainnet);
 
         let token_ids = vec![
             "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // ALPH

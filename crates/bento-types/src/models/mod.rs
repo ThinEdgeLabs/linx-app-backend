@@ -51,10 +51,8 @@ pub fn convert_bwe_to_event_models(blocks: Vec<BlockAndEvents>) -> Vec<EventMode
 }
 
 pub fn convert_bwe_to_tx_models(blocks: Vec<BlockAndEvents>) -> Vec<TransactionModel> {
-    let mut iterator = blocks
-        .iter()
-        .map(|bwe| (bwe.block.hash.clone(), bwe.block.transactions.clone()))
-        .collect::<Vec<_>>();
+    let mut iterator =
+        blocks.iter().map(|bwe| (bwe.block.hash.clone(), bwe.block.transactions.clone())).collect::<Vec<_>>();
 
     iterator
         .iter_mut()
@@ -64,20 +62,10 @@ pub fn convert_bwe_to_tx_models(blocks: Vec<BlockAndEvents>) -> Vec<TransactionM
                 tx_hash: t.unsigned.tx_id.clone(),
                 unsigned: serde_json::to_value(t.unsigned.clone()).unwrap_or_default(),
                 script_execution_ok: t.script_execution_ok,
-                contract_inputs: serde_json::to_value(t.contract_inputs.clone())
-                    .unwrap_or_default(),
-                generated_outputs: serde_json::to_value(t.generated_outputs.clone())
-                    .unwrap_or_default(),
-                input_signatures: t
-                    .input_signatures
-                    .iter()
-                    .map(|i| Option::Some(i.to_owned()))
-                    .collect::<Vec<_>>(),
-                script_signatures: t
-                    .script_signatures
-                    .iter()
-                    .map(|i| Option::Some(i.to_owned()))
-                    .collect::<Vec<_>>(),
+                contract_inputs: serde_json::to_value(t.contract_inputs.clone()).unwrap_or_default(),
+                generated_outputs: serde_json::to_value(t.generated_outputs.clone()).unwrap_or_default(),
+                input_signatures: t.input_signatures.iter().map(|i| Option::Some(i.to_owned())).collect::<Vec<_>>(),
+                script_signatures: t.script_signatures.iter().map(|i| Option::Some(i.to_owned())).collect::<Vec<_>>(),
                 block_hash: Some(block.to_string()),
             })
         })

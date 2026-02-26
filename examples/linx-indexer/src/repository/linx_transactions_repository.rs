@@ -16,10 +16,7 @@ impl LinxTransactionsRepository {
     }
 
     /// Insert a new Linx transaction record
-    pub async fn insert_linx_transaction(
-        &self,
-        new_transaction: NewLinxTransaction,
-    ) -> Result<LinxTransaction> {
+    pub async fn insert_linx_transaction(&self, new_transaction: NewLinxTransaction) -> Result<LinxTransaction> {
         let mut conn = self.db_pool.get().await?;
 
         let transaction = diesel::insert_into(linx_transactions::table)
@@ -35,11 +32,8 @@ impl LinxTransactionsRepository {
     pub async fn is_linx_transaction(&self, tx_id: &str) -> Result<bool> {
         let mut conn = self.db_pool.get().await?;
 
-        let count: i64 = linx_transactions::table
-            .filter(linx_transactions::tx_id.eq(tx_id))
-            .count()
-            .get_result(&mut conn)
-            .await?;
+        let count: i64 =
+            linx_transactions::table.filter(linx_transactions::tx_id.eq(tx_id)).count().get_result(&mut conn).await?;
 
         Ok(count > 0)
     }

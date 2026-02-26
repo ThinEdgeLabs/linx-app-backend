@@ -31,10 +31,7 @@ pub async fn insert_events_to_db(db: Arc<DbPool>, events: Vec<EventModel>) -> Re
     tracing::debug!("Executing full insert query for {} events", events.len());
     match tokio::time::timeout(
         Duration::from_secs(30), // Increased timeout for larger batches
-        insert_into(crate::schema::events::table)
-            .values(&events)
-            .on_conflict_do_nothing()
-            .execute(&mut conn),
+        insert_into(crate::schema::events::table).values(&events).on_conflict_do_nothing().execute(&mut conn),
     )
     .await
     {

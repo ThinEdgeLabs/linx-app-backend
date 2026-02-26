@@ -52,9 +52,7 @@ impl ProcessorConfig {
             ProcessorConfig::EventProcessor => {
                 new_processor(crate::processors::event_processor::EventProcessor::new(db_pool))
             }
-            ProcessorConfig::TxProcessor => {
-                new_processor(crate::processors::tx_processor::TxProcessor::new(db_pool))
-            }
+            ProcessorConfig::TxProcessor => new_processor(crate::processors::tx_processor::TxProcessor::new(db_pool)),
             ProcessorConfig::Custom { factory, config, .. } => factory(db_pool, config.clone()),
         }
     }

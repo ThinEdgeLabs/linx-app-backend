@@ -15,10 +15,7 @@ use anyhow;
 ///
 /// # Returns
 /// * Base58-encoded Alephium address
-pub fn address_from_private_key(
-    private_key_bytes: &[u8],
-    address_type: AddressType,
-) -> anyhow::Result<String> {
+pub fn address_from_private_key(private_key_bytes: &[u8], address_type: AddressType) -> anyhow::Result<String> {
     use blake2::{Blake2b, Digest};
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
@@ -27,8 +24,8 @@ pub fn address_from_private_key(
     }
 
     // Create secret key
-    let secret_key = SecretKey::from_slice(private_key_bytes)
-        .map_err(|e| anyhow::anyhow!("Invalid private key: {}", e))?;
+    let secret_key =
+        SecretKey::from_slice(private_key_bytes).map_err(|e| anyhow::anyhow!("Invalid private key: {}", e))?;
 
     // Get public key
     let secp = Secp256k1::new();
@@ -71,12 +68,12 @@ pub fn sign_message(message: &str, private_key_bytes: &[u8]) -> anyhow::Result<S
     let message_hash = hasher.finalize();
 
     // Convert to secp256k1 Message
-    let secp_message = Message::from_digest_slice(&message_hash)
-        .map_err(|e| anyhow::anyhow!("Invalid message hash: {}", e))?;
+    let secp_message =
+        Message::from_digest_slice(&message_hash).map_err(|e| anyhow::anyhow!("Invalid message hash: {}", e))?;
 
     // Create secret key
-    let secret_key = SecretKey::from_slice(private_key_bytes)
-        .map_err(|e| anyhow::anyhow!("Invalid private key: {}", e))?;
+    let secret_key =
+        SecretKey::from_slice(private_key_bytes).map_err(|e| anyhow::anyhow!("Invalid private key: {}", e))?;
 
     // Sign the message
     let secp = Secp256k1::signing_only();
@@ -97,11 +94,7 @@ pub fn sign_message(message: &str, private_key_bytes: &[u8]) -> anyhow::Result<S
 /// * `Ok(true)` if the signature is valid
 /// * `Ok(false)` if the signature is invalid
 /// * `Err` if there's a formatting error with the inputs
-pub fn verify_signature(
-    public_key_hex: &str,
-    message: &str,
-    signature_hex: &str,
-) -> anyhow::Result<bool> {
+pub fn verify_signature(public_key_hex: &str, message: &str, signature_hex: &str) -> anyhow::Result<bool> {
     use secp256k1::ecdsa::Signature;
     use secp256k1::{Message, PublicKey, Secp256k1};
     use sha2::{Digest, Sha256};
@@ -112,22 +105,19 @@ pub fn verify_signature(
     let message_hash = hasher.finalize();
 
     // Convert to secp256k1 Message
-    let secp_message = Message::from_digest_slice(&message_hash)
-        .map_err(|e| anyhow::anyhow!("Invalid message hash: {}", e))?;
+    let secp_message =
+        Message::from_digest_slice(&message_hash).map_err(|e| anyhow::anyhow!("Invalid message hash: {}", e))?;
 
     // Decode the signature from hex
-    let signature_bytes =
-        hex::decode(signature_hex).map_err(|e| anyhow::anyhow!("Invalid signature hex: {}", e))?;
+    let signature_bytes = hex::decode(signature_hex).map_err(|e| anyhow::anyhow!("Invalid signature hex: {}", e))?;
 
-    let signature = Signature::from_compact(&signature_bytes)
-        .map_err(|e| anyhow::anyhow!("Invalid signature format: {}", e))?;
+    let signature =
+        Signature::from_compact(&signature_bytes).map_err(|e| anyhow::anyhow!("Invalid signature format: {}", e))?;
 
     // Decode public key from hex
-    let pubkey_bytes = hex::decode(public_key_hex)
-        .map_err(|e| anyhow::anyhow!("Invalid public key hex: {}", e))?;
+    let pubkey_bytes = hex::decode(public_key_hex).map_err(|e| anyhow::anyhow!("Invalid public key hex: {}", e))?;
 
-    let public_key = PublicKey::from_slice(&pubkey_bytes)
-        .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
+    let public_key = PublicKey::from_slice(&pubkey_bytes).map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
 
     // Verify the signature
     let secp = Secp256k1::verification_only();
@@ -148,13 +138,11 @@ pub fn verify_public_key_for_address(public_key_hex: &str, address: &str) -> any
     use blake2::{Blake2b, Digest};
 
     // Decode public key from hex
-    let pubkey_bytes = hex::decode(public_key_hex)
-        .map_err(|e| anyhow::anyhow!("Invalid public key hex: {}", e))?;
+    let pubkey_bytes = hex::decode(public_key_hex).map_err(|e| anyhow::anyhow!("Invalid public key hex: {}", e))?;
 
     // Decode Alephium address
-    let decoded_address = bs58::decode(address)
-        .into_vec()
-        .map_err(|e| anyhow::anyhow!("Invalid address format: {}", e))?;
+    let decoded_address =
+        bs58::decode(address).into_vec().map_err(|e| anyhow::anyhow!("Invalid address format: {}", e))?;
 
     if decoded_address.is_empty() {
         return Err(anyhow::anyhow!("Empty address"));
@@ -166,7 +154,11 @@ pub fn verify_public_key_for_address(public_key_hex: &str, address: &str) -> any
         // P2PKH, P2MPKH, P2SH, P2C (traditional addresses with hash)
         0x00..=0x03 => {
             if decoded_address.len() != 33 {
-                return Err(anyhow::anyhow!("Invalid address length for type {:#x}: expected 33, got {}", address_type, decoded_address.len()));
+                return Err(anyhow::anyhow!(
+                    "Invalid address length for type {:#x}: expected 33, got {}",
+                    address_type,
+                    decoded_address.len()
+                ));
             }
 
             // Hash the public key with Blake2b-256
@@ -183,7 +175,10 @@ pub fn verify_public_key_for_address(public_key_hex: &str, address: &str) -> any
             // Minimum length: 1 + 1 + 33 + 4 = 39 bytes (compressed)
             // Maximum length: 1 + 1 + 65 + 4 = 71 bytes (uncompressed)
             if decoded_address.len() < 39 {
-                return Err(anyhow::anyhow!("Invalid P2PK address length: expected at least 39, got {}", decoded_address.len()));
+                return Err(anyhow::anyhow!(
+                    "Invalid P2PK address length: expected at least 39, got {}",
+                    decoded_address.len()
+                ));
             }
 
             // Extract the public key from the address
@@ -203,9 +198,7 @@ pub fn verify_public_key_for_address(public_key_hex: &str, address: &str) -> any
             // because it's a multisig address with a hash of multiple public keys
             Err(anyhow::anyhow!("Cannot verify single public key for P2HMPK multisig address"))
         }
-        _ => {
-            Err(anyhow::anyhow!("Unsupported address type: {:#x}", address_type))
-        }
+        _ => Err(anyhow::anyhow!("Unsupported address type: {:#x}", address_type)),
     }
 }
 
@@ -219,9 +212,8 @@ mod tests {
 
         // Create a test private key (32 bytes)
         let private_key = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-            0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+            0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         // Get public key
@@ -235,8 +227,7 @@ mod tests {
         let signature = sign_message(message, &private_key).expect("Failed to sign message");
 
         // Verify the signature
-        let is_valid = verify_signature(&public_key_hex, message, &signature)
-            .expect("Failed to verify signature");
+        let is_valid = verify_signature(&public_key_hex, message, &signature).expect("Failed to verify signature");
 
         assert!(is_valid, "Signature should be valid");
     }
@@ -247,9 +238,8 @@ mod tests {
 
         // Create a test private key
         let private_key = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-            0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+            0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         // Get public key
@@ -264,8 +254,8 @@ mod tests {
 
         // Try to verify with a different message
         let different_message = "Different message";
-        let is_valid = verify_signature(&public_key_hex, different_message, &signature)
-            .expect("Failed to verify signature");
+        let is_valid =
+            verify_signature(&public_key_hex, different_message, &signature).expect("Failed to verify signature");
 
         assert!(!is_valid, "Signature should be invalid for different message");
     }
@@ -276,15 +266,13 @@ mod tests {
 
         // Create two different private keys
         let private_key1 = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-            0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+            0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         let private_key2 = [
-            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e,
-            0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c,
-            0x3d, 0x3e, 0x3f, 0x40,
+            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32,
+            0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
         ];
 
         let secp = Secp256k1::new();
@@ -297,8 +285,7 @@ mod tests {
         let signature = sign_message(message, &private_key1).expect("Failed to sign message");
 
         // Try to verify with public_key2
-        let is_valid = verify_signature(&public_key2_hex, message, &signature)
-            .expect("Failed to verify signature");
+        let is_valid = verify_signature(&public_key2_hex, message, &signature).expect("Failed to verify signature");
 
         assert!(!is_valid, "Signature should be invalid for wrong public key");
     }
@@ -308,9 +295,8 @@ mod tests {
         use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
         let private_key = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-            0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+            0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         let secret_key = SecretKey::from_slice(&private_key).unwrap();
@@ -360,12 +346,9 @@ mod tests {
 
     #[test]
     fn test_address_from_private_key() {
-        let private_key =
-            hex::decode("7babd8a9b3af814757fde3d801afcf9a94d1d9e35863c31db75e05202136e1b8")
-                .unwrap();
+        let private_key = hex::decode("7babd8a9b3af814757fde3d801afcf9a94d1d9e35863c31db75e05202136e1b8").unwrap();
 
-        let address = address_from_private_key(&private_key, AddressType::P2PKH)
-            .expect("Failed to generate address");
+        let address = address_from_private_key(&private_key, AddressType::P2PKH).expect("Failed to generate address");
         let expected_address = "1EJCtZP3HZP5rDX5v2o32woqLTxp6GS4GoLQGpzVPQm6E";
         assert_eq!(address, expected_address, "Generated address does not match expected");
     }
@@ -375,14 +358,12 @@ mod tests {
         use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
         let private_key = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-            0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12,
+            0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         // Generate address and public key from private key
-        let address = address_from_private_key(&private_key, AddressType::P2PKH)
-            .expect("Failed to generate address");
+        let address = address_from_private_key(&private_key, AddressType::P2PKH).expect("Failed to generate address");
 
         let secret_key = SecretKey::from_slice(&private_key).unwrap();
         let secp = Secp256k1::new();
@@ -390,24 +371,21 @@ mod tests {
         let public_key_hex = hex::encode(public_key.serialize());
 
         // Verify they match
-        let matches = verify_public_key_for_address(&public_key_hex, &address)
-            .expect("Failed to verify public key");
+        let matches = verify_public_key_for_address(&public_key_hex, &address).expect("Failed to verify public key");
 
         assert!(matches, "Public key should match address");
 
         // Test with wrong public key
         let private_key2 = [
-            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e,
-            0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c,
-            0x3d, 0x3e, 0x3f, 0x40,
+            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32,
+            0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
         ];
 
         let secret_key2 = SecretKey::from_slice(&private_key2).unwrap();
         let public_key2 = PublicKey::from_secret_key(&secp, &secret_key2);
         let public_key2_hex = hex::encode(public_key2.serialize());
 
-        let matches = verify_public_key_for_address(&public_key2_hex, &address)
-            .expect("Failed to verify public key");
+        let matches = verify_public_key_for_address(&public_key2_hex, &address).expect("Failed to verify public key");
 
         assert!(!matches, "Wrong public key should not match address");
     }
@@ -430,13 +408,13 @@ mod tests {
         let message = format!("Apply referral: {} at {}", referral_code, timestamp);
 
         // Test public key verification for groupless P2PK address
-        let pubkey_matches = verify_public_key_for_address(public_key, address)
-            .expect("Public key verification should not error");
+        let pubkey_matches =
+            verify_public_key_for_address(public_key, address).expect("Public key verification should not error");
         assert!(pubkey_matches, "Public key should match P2PK groupless address");
 
         // Test signature verification
-        let sig_valid = verify_signature(public_key, &message, signature)
-            .expect("Signature verification should not error");
+        let sig_valid =
+            verify_signature(public_key, &message, signature).expect("Signature verification should not error");
         assert!(sig_valid, "Signature should be valid for P2PK groupless address");
     }
 }

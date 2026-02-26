@@ -30,36 +30,29 @@ async fn main() -> anyhow::Result<()> {
         app_config.linx_group,
     ));
 
-    let points_config = config
-        .points
-        .expect("Points configuration not found in config.toml. Add [points] section.");
+    let points_config = config.points.expect("Points configuration not found in config.toml. Add [points] section.");
 
-    let calculator_service =
-        PointsCalculatorService::new(db_pool.clone(), price_service, points_config.clone());
+    let calculator_service = PointsCalculatorService::new(db_pool.clone(), price_service, points_config.clone());
 
     match std::env::args().nth(1).as_deref() {
         Some("once") => {
-            let date_str =
-                std::env::args().nth(2).expect("Usage: points once <date> (format: YYYY-MM-DD)");
-            let date = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-                .expect("Invalid date format. Use YYYY-MM-DD");
+            let date_str = std::env::args().nth(2).expect("Usage: points once <date> (format: YYYY-MM-DD)");
+            let date = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d").expect("Invalid date format. Use YYYY-MM-DD");
 
             tracing::info!("Calculating points for date: {}", date);
             calculator_service.calculate_points_for_date(date).await?;
             tracing::info!("Points calculation completed successfully");
         }
         Some("range") | Some("backfill") => {
-            let start_str = std::env::args()
-                .nth(2)
-                .expect("Usage: points range <start-date> <end-date> (format: YYYY-MM-DD)");
-            let end_str = std::env::args()
-                .nth(3)
-                .expect("Usage: points range <start-date> <end-date> (format: YYYY-MM-DD)");
+            let start_str =
+                std::env::args().nth(2).expect("Usage: points range <start-date> <end-date> (format: YYYY-MM-DD)");
+            let end_str =
+                std::env::args().nth(3).expect("Usage: points range <start-date> <end-date> (format: YYYY-MM-DD)");
 
-            let start_date = NaiveDate::parse_from_str(&start_str, "%Y-%m-%d")
-                .expect("Invalid start date format. Use YYYY-MM-DD");
-            let end_date = NaiveDate::parse_from_str(&end_str, "%Y-%m-%d")
-                .expect("Invalid end date format. Use YYYY-MM-DD");
+            let start_date =
+                NaiveDate::parse_from_str(&start_str, "%Y-%m-%d").expect("Invalid start date format. Use YYYY-MM-DD");
+            let end_date =
+                NaiveDate::parse_from_str(&end_str, "%Y-%m-%d").expect("Invalid end date format. Use YYYY-MM-DD");
 
             if start_date > end_date {
                 anyhow::bail!("Start date must be before or equal to end date");

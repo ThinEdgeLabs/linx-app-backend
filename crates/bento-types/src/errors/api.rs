@@ -55,19 +55,13 @@ impl std::error::Error for AppError {}
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::Internal(e) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-            }
+            AppError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::DatabaseError(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error occurred: {}", e))
             }
-            AppError::ValidationError(msg) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, format!("Validation error: {}", msg))
-            }
+            AppError::ValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, format!("Validation error: {}", msg)),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, format!("Not found: {}", msg)),
-            AppError::Unauthorized(msg) => {
-                (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg))
-            }
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", msg)),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, format!("Forbidden: {}", msg)),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, format!("Bad request: {}", msg)),
         };
@@ -127,9 +121,7 @@ pub enum RepositoryError {
 impl From<RepositoryError> for AppError {
     fn from(err: RepositoryError) -> Self {
         match err {
-            RepositoryError::BlockNotFound(hash) => {
-                AppError::NotFound(format!("Block not found: {}", hash))
-            }
+            RepositoryError::BlockNotFound(hash) => AppError::NotFound(format!("Block not found: {}", hash)),
             RepositoryError::DatabaseError(e) => AppError::DatabaseError(e.into()),
             RepositoryError::Other(e) => AppError::Internal(e),
         }

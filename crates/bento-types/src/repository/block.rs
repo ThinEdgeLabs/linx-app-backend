@@ -39,12 +39,7 @@ pub async fn get_block_by_hash(db: Arc<DbPool>, block_hash: &str) -> Result<Opti
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
-    let block = blocks
-        .filter(hash.eq(block_hash))
-        .select(BlockModel::as_select())
-        .first(&mut conn)
-        .await
-        .ok();
+    let block = blocks.filter(hash.eq(block_hash)).select(BlockModel::as_select()).first(&mut conn).await.ok();
     Ok(block)
 }
 
@@ -83,12 +78,7 @@ pub async fn fetch_block_hashes_at_height_filter_one(
 }
 
 /// Get blocks, order by height
-pub async fn get_blocks(
-    db: Arc<DbPool>,
-    limit: i64,
-    offset: i64,
-    order: Option<Order>,
-) -> Result<Vec<BlockModel>> {
+pub async fn get_blocks(db: Arc<DbPool>, limit: i64, offset: i64, order: Option<Order>) -> Result<Vec<BlockModel>> {
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
@@ -120,12 +110,8 @@ pub async fn get_block_by_height(db: Arc<DbPool>, height_value: i64) -> Result<O
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
-    let block_model = blocks
-        .filter(height.eq(height_value))
-        .select(BlockModel::as_select())
-        .first(&mut conn)
-        .await
-        .ok();
+    let block_model =
+        blocks.filter(height.eq(height_value)).select(BlockModel::as_select()).first(&mut conn).await.ok();
 
     Ok(block_model)
 }
@@ -134,12 +120,8 @@ pub async fn exists_block(db: Arc<DbPool>, block_hash_value: &str) -> Result<boo
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
-    let block_exists = blocks
-        .filter(hash.eq(block_hash_value))
-        .select(BlockModel::as_select())
-        .first(&mut conn)
-        .await
-        .is_ok();
+    let block_exists =
+        blocks.filter(hash.eq(block_hash_value)).select(BlockModel::as_select()).first(&mut conn).await.is_ok();
 
     Ok(block_exists)
 }
@@ -148,10 +130,8 @@ pub async fn get_max_block_timestamp(db: &Arc<DbPool>) -> Result<Option<i64>> {
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
-    let max_timestamp: Option<NaiveDateTime> =
-        blocks.select(diesel::dsl::max(timestamp)).first(&mut conn).await?;
-    let milliseconds =
-        max_timestamp.map(|ts: NaiveDateTime| ts.and_utc().timestamp_millis());
+    let max_timestamp: Option<NaiveDateTime> = blocks.select(diesel::dsl::max(timestamp)).first(&mut conn).await?;
+    let milliseconds = max_timestamp.map(|ts: NaiveDateTime| ts.and_utc().timestamp_millis());
     Ok(milliseconds)
 }
 
@@ -159,19 +139,11 @@ pub async fn get_blocks_at_height(db: &Arc<DbPool>, height_value: i64) -> Result
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;
-    let block_models = blocks
-        .filter(height.eq(height_value))
-        .select(BlockModel::as_select())
-        .load(&mut conn)
-        .await?;
+    let block_models = blocks.filter(height.eq(height_value)).select(BlockModel::as_select()).load(&mut conn).await?;
     Ok(block_models)
 }
 
-pub async fn get_latest_block(
-    db: &Arc<DbPool>,
-    from_group: i64,
-    to_group: i64,
-) -> Result<Option<BlockModel>> {
+pub async fn get_latest_block(db: &Arc<DbPool>, from_group: i64, to_group: i64) -> Result<Option<BlockModel>> {
     use crate::schema::blocks::dsl::*;
 
     let mut conn = db.get().await?;

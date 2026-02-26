@@ -3,16 +3,7 @@ use crate::{schema::transactions, BlockHash};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 #[derive(
-    Queryable,
-    Selectable,
-    Insertable,
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    AsChangeset,
-    Associations,
-    Identifiable,
+    Queryable, Selectable, Insertable, Debug, Clone, Serialize, Deserialize, AsChangeset, Associations, Identifiable,
 )]
 #[diesel(table_name = transactions)]
 #[diesel(primary_key(tx_hash))]
