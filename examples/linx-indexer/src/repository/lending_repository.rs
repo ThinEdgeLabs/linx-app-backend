@@ -512,6 +512,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_hourly_buckets() {
         let pool = create_test_pool().await;
         let test_addr = "test-hourly-buckets";
@@ -554,6 +555,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_daily_buckets() {
         let pool = create_test_pool().await;
         let test_addr = "test-daily-buckets";
@@ -591,6 +593,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_multi_market_aggregation() {
         let pool = create_test_pool().await;
         let test_addr = "test-multi-market";
@@ -623,6 +626,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_no_data_returns_empty() {
         let pool = create_test_pool().await;
         let repo = LendingRepository::new(pool);
@@ -637,6 +641,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_timeframe_filtering() {
         let pool = create_test_pool().await;
         let test_addr = "test-tf-filter";
@@ -675,6 +680,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    #[ignore = "requires database"]
     async fn test_single_snapshot_per_bucket() {
         let pool = create_test_pool().await;
         let test_addr = "test-single-snap";

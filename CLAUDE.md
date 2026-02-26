@@ -103,9 +103,19 @@ diesel migration run --config-file diesel.toml
 ```
 
 ### Testing
+
+Tests that require a running PostgreSQL database are marked with `#[ignore = "requires database"]`.
+By default, `cargo test` skips these and runs only unit tests (which use mocks).
+
 ```bash
-# Run all tests
+# Run unit tests only (default, no database needed — used in CI)
 cargo test
+
+# Run database integration tests only (requires PostgreSQL)
+cargo test -- --ignored
+
+# Run all tests (unit + database)
+cargo test -- --include-ignored
 
 # Run tests for a specific crate
 cargo test -p bento-core
