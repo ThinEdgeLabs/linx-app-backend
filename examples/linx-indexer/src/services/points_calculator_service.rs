@@ -669,6 +669,7 @@ mod tests {
                     max_tokens_distribution: BigDecimal::from_str("1000000").unwrap(),
                     is_active: true,
                     created_at: chrono::Utc::now().naive_utc(),
+                    tokens_allocation: BigDecimal::from_str("1000000").unwrap(),
                 }))
             });
             self

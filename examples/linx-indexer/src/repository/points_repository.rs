@@ -117,6 +117,8 @@ pub trait PointsRepositoryTrait {
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
 
     async fn award_bonus_points(&self, user_address: &str, bonus_amount: i32, season_id: i32) -> Result<()>;
+
+    async fn get_total_points_for_season(&self, season_id: i32) -> Result<i64>;
 }
 
 pub struct PointsRepository {
@@ -755,6 +757,36 @@ impl PointsRepositoryTrait for PointsRepository {
         }
 
         Ok(())
+    }
+
+    async fn get_total_points_for_season(&self, season_id: i32) -> Result<i64> {
+        use diesel::sql_types::Integer;
+
+        let mut conn = self.db_pool.get().await?;
+
+        #[derive(QueryableByName, Debug)]
+        struct TotalPointsResult {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            total_points_sum: i64,
+        }
+
+        let result: TotalPointsResult = diesel::sql_query(
+            r#"
+            SELECT COALESCE(SUM(total_points::bigint), 0)::bigint as total_points_sum
+            FROM points_snapshots
+            WHERE season_id = $1
+              AND snapshot_date = (
+                SELECT MAX(snapshot_date)
+                FROM points_snapshots
+                WHERE season_id = $1
+              )
+            "#,
+        )
+        .bind::<Integer, _>(season_id)
+        .get_result(&mut conn)
+        .await?;
+
+        Ok(result.total_points_sum)
     }
 }
 

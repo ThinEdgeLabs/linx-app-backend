@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use bento_server::{AppState, error::AppError};
+use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
@@ -40,6 +41,7 @@ pub struct UserPointsResponse {
     pub referral_code: String,
     pub referrals: i64,
     pub has_applied_referral_code: bool,
+    pub token_allocation: String,
 }
 
 #[derive(Debug, serde::Deserialize, ToSchema)]
@@ -67,12 +69,31 @@ pub struct ReferralDetailsQuery {
     pub limit: i64,
 }
 
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct UserPointsQuery {
+    /// Optional season ID. If not provided, uses the active season.
+    pub season_id: Option<i32>,
+}
+
 fn default_page() -> i64 {
     0
 }
 
 fn default_limit() -> i64 {
     20
+}
+
+// ==================== Helper Functions ====================
+
+fn calculate_token_allocation(user_points: i32, total_points: i64, tokens_allocation: &BigDecimal) -> String {
+    if total_points == 0 || user_points == 0 {
+        return "0".to_string();
+    }
+    let user_bd = BigDecimal::from(user_points);
+    let total_bd = BigDecimal::from(total_points);
+    let allocation = ((user_bd / total_bd) * tokens_allocation).round(0);
+    let decimals = BigDecimal::from(10u64.pow(18));
+    (allocation * decimals).to_string()
 }
 
 // ==================== Handler Functions ====================
@@ -112,14 +133,15 @@ pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<im
 
 /// Get user points
 ///
-/// Returns the total points for a specific user address from the latest snapshot for the active season,
-/// along with their referral code.
+/// Returns the total points for a specific user address from the latest snapshot for a season,
+/// along with their referral code. If no season_id is provided, uses the active season.
 #[utoipa::path(
     get,
     path = "/points/{address}",
     tag = "Points",
     params(
-        ("address" = String, Path, description = "User wallet address")
+        ("address" = String, Path, description = "User wallet address"),
+        UserPointsQuery
     ),
     responses(
         (status = 200, description = "Successfully retrieved user points", body = UserPointsResponse),
@@ -129,6 +151,7 @@ pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<im
 )]
 pub async fn get_user_points_handler(
     Path(address): Path<String>,
+    Query(query): Query<UserPointsQuery>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
@@ -137,11 +160,19 @@ pub async fn get_user_points_handler(
     let user_referral = repo.get_user_referral(&address).await?;
     let has_applied_referral_code = user_referral.is_some();
 
-    // Get active season
-    let active_season =
-        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    // Get season by ID or fall back to active season
+    let season = match query.season_id {
+        Some(id) => repo
+            .get_season_by_id(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Season with id {} not found", id)))?,
+        None => {
+            repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?
+        }
+    };
 
-    let snapshot = repo.get_latest_snapshot(&address, active_season.id).await?;
+    let snapshot = repo.get_latest_snapshot(&address, season.id).await?;
+    let total_points = repo.get_total_points_for_season(season.id).await?;
 
     match snapshot {
         Some(snapshot) => {
@@ -153,17 +184,28 @@ pub async fn get_user_points_handler(
             // Get count of users who used this user's referral code
             let referrals = repo.count_referrals_by_address(&address).await?;
 
+            let token_allocation =
+                calculate_token_allocation(snapshot.total_points, total_points, &season.tokens_allocation);
+
             Ok(Json(UserPointsResponse {
                 points: snapshot.total_points,
                 rank,
                 referral_code,
                 referrals,
                 has_applied_referral_code,
+                token_allocation,
             }))
         }
         None => {
             let referral_code = repo.get_or_create_referral_code(&address).await?;
-            Ok(Json(UserPointsResponse { points: 0, rank: 0, referral_code, referrals: 0, has_applied_referral_code }))
+            Ok(Json(UserPointsResponse {
+                points: 0,
+                rank: 0,
+                referral_code,
+                referrals: 0,
+                has_applied_referral_code,
+                token_allocation: "0".to_string(),
+            }))
         }
     }
 }

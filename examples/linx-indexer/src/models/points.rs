@@ -76,6 +76,8 @@ pub struct Season {
     pub is_active: bool,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
+    #[schema(value_type = String)]
+    pub tokens_allocation: BigDecimal,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -86,6 +88,7 @@ pub struct NewSeason {
     pub end_date: NaiveDate,
     pub max_tokens_distribution: BigDecimal,
     pub is_active: bool,
+    pub tokens_allocation: BigDecimal,
 }
 
 // ==================== Referral Codes ====================

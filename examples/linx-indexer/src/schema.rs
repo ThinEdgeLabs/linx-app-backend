@@ -167,6 +167,7 @@ diesel::table! {
         max_tokens_distribution -> Numeric,
         is_active -> Bool,
         created_at -> Timestamp,
+        tokens_allocation -> Numeric,
     }
 }
 
