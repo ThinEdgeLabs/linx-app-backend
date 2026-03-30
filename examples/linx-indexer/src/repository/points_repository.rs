@@ -119,6 +119,10 @@ pub trait PointsRepositoryTrait {
     async fn award_bonus_points(&self, user_address: &str, bonus_amount: i32, season_id: i32) -> Result<()>;
 
     async fn get_total_points_for_season(&self, season_id: i32) -> Result<i64>;
+
+    // ==================== Stats ====================
+
+    async fn get_unique_users_count(&self) -> Result<i64>;
 }
 
 pub struct PointsRepository {
@@ -787,6 +791,26 @@ impl PointsRepositoryTrait for PointsRepository {
         .await?;
 
         Ok(result.total_points_sum)
+    }
+
+    // ==================== Stats ====================
+
+    async fn get_unique_users_count(&self) -> Result<i64> {
+        let mut conn = self.db_pool.get().await?;
+
+        #[derive(QueryableByName, Debug)]
+        struct UniqueUsersResult {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            unique_users: i64,
+        }
+
+        let result: UniqueUsersResult = diesel::sql_query(
+            "SELECT COUNT(DISTINCT address)::bigint as unique_users FROM points_snapshots",
+        )
+        .get_result(&mut conn)
+        .await?;
+
+        Ok(result.unique_users)
     }
 }
 

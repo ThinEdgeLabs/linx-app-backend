@@ -1,7 +1,7 @@
 use linx_indexer::{
     config::AppConfig,
     get_processor_factories,
-    routers::{AccountTransactionsRouter, LendingRouter, PointsRouter, TransactionsRouter},
+    routers::{AccountTransactionsRouter, LendingRouter, PointsRouter, StatsRouter, TransactionsRouter},
 };
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let router = AccountTransactionsRouter::register()
         .merge(LendingRouter::register())
         .merge(PointsRouter::register())
+        .merge(StatsRouter::register())
         .merge(TransactionsRouter::register());
 
     bento_cli::run_command(processor_factories, Some(router), true, app_config).await?;
