@@ -184,8 +184,11 @@ pub async fn get_user_points_handler(
             // Get count of users who used this user's referral code
             let referrals = repo.count_referrals_by_address(&address).await?;
 
-            let token_allocation =
-                calculate_token_allocation(snapshot.total_points, total_points, &season.tokens_allocation);
+            // let token_allocation =
+            //     calculate_token_allocation(snapshot.total_points, total_points, &season.tokens_allocation);
+
+            // Return "0" for token allocation for now since the actual allocation logic and tokenomics are still being finalized
+            let token_allocation = "0".to_string();
 
             Ok(Json(UserPointsResponse {
                 points: snapshot.total_points,
