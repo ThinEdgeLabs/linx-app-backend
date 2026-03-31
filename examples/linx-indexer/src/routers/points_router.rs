@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::{StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -22,6 +23,7 @@ impl PointsRouter {
             .route("/points/v1/season", get(get_current_season_handler))
             .route("/points/v1/apply-referral", post(apply_referral_handler))
             .route("/points/v1/referrals/{address}", get(get_referral_details_handler))
+            .route("/points/v1/share/{referral_code}", get(get_share_image_handler))
             .route("/points/v1/{address}", get(get_user_points_handler))
     }
 }
@@ -388,4 +390,55 @@ pub async fn get_referral_details_handler(
         limit: query.limit,
         has_more,
     }))
+}
+
+/// Get share image
+///
+/// Returns a PNG image for social sharing, showing the user's previous season points and referral code.
+/// The path parameter is the user's referral code (not their address) to avoid exposing addresses in shared links.
+pub async fn get_share_image_handler(
+    Path(referral_code): Path<String>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    let repo = PointsRepository::new(state.db.clone());
+
+    let referral = repo
+        .get_referral_code(&referral_code)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Referral code not found".to_string()))?;
+
+    let active_season = repo
+        .get_active_season()
+        .await?
+        .ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+
+    let previous_season_number = active_season.season_number - 1;
+    let seasons = repo.get_all_seasons().await?;
+    let season = seasons
+        .into_iter()
+        .find(|s| s.season_number == previous_season_number)
+        .ok_or_else(|| AppError::NotFound("Previous season not found".to_string()))?;
+
+    let snapshot = repo
+        .get_latest_snapshot(&referral.owner_address, season.id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("No points found for this user".to_string()))?;
+
+    let points = snapshot.total_points;
+
+    let png_bytes = tokio::task::spawn_blocking(move || {
+        crate::share_image::generate_share_image(points, &referral_code)
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to generate share image: {}", e)))?;
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=300"),
+        ],
+        png_bytes,
+    ))
 }

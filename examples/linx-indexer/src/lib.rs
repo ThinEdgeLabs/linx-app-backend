@@ -12,6 +12,7 @@ pub mod repository;
 pub mod routers;
 pub mod schema;
 pub mod services;
+pub mod share_image;
 
 /// Register all custom processor factories
 pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {

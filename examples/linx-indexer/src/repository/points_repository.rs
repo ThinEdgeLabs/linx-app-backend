@@ -74,6 +74,8 @@ pub trait PointsRepositoryTrait {
 
     // ==================== Seasons ====================
 
+    async fn get_all_seasons(&self) -> Result<Vec<Season>>;
+
     async fn get_active_season(&self) -> Result<Option<Season>>;
 
     async fn get_season_by_id(&self, id: i32) -> Result<Option<Season>>;
@@ -475,6 +477,17 @@ impl PointsRepositoryTrait for PointsRepository {
     }
 
     // ==================== Seasons ====================
+
+    async fn get_all_seasons(&self) -> Result<Vec<Season>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let seasons: Vec<Season> = schema::points_seasons::table
+            .order(schema::points_seasons::season_number.asc())
+            .load(&mut conn)
+            .await?;
+
+        Ok(seasons)
+    }
 
     async fn get_active_season(&self) -> Result<Option<Season>> {
         let mut conn = self.db_pool.get().await?;
