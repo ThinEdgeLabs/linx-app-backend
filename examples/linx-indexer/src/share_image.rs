@@ -26,10 +26,7 @@ static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     // Try loading fonts from common Linux paths first (for Docker containers),
     // then fall back to system fonts (for macOS/local dev)
-    let font_dirs = [
-        "/usr/share/fonts",
-        "/usr/local/share/fonts",
-    ];
+    let font_dirs = ["/usr/share/fonts", "/usr/local/share/fonts"];
     for dir in &font_dirs {
         if std::path::Path::new(dir).exists() {
             db.load_fonts_dir(dir);
