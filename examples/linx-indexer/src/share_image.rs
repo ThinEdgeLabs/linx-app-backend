@@ -87,8 +87,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires share_background.svg asset"]
     fn test_generate_share_image() {
-        // SAFETY: test runs single-threaded, no concurrent env reads
         unsafe {
             std::env::set_var(
                 "SHARE_TEMPLATE_PATH",
