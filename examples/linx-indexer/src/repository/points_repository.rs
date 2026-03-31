@@ -481,10 +481,8 @@ impl PointsRepositoryTrait for PointsRepository {
     async fn get_all_seasons(&self) -> Result<Vec<Season>> {
         let mut conn = self.db_pool.get().await?;
 
-        let seasons: Vec<Season> = schema::points_seasons::table
-            .order(schema::points_seasons::season_number.asc())
-            .load(&mut conn)
-            .await?;
+        let seasons: Vec<Season> =
+            schema::points_seasons::table.order(schema::points_seasons::season_number.asc()).load(&mut conn).await?;
 
         Ok(seasons)
     }
@@ -817,11 +815,10 @@ impl PointsRepositoryTrait for PointsRepository {
             unique_users: i64,
         }
 
-        let result: UniqueUsersResult = diesel::sql_query(
-            "SELECT COUNT(DISTINCT address)::bigint as unique_users FROM points_snapshots",
-        )
-        .get_result(&mut conn)
-        .await?;
+        let result: UniqueUsersResult =
+            diesel::sql_query("SELECT COUNT(DISTINCT address)::bigint as unique_users FROM points_snapshots")
+                .get_result(&mut conn)
+                .await?;
 
         Ok(result.unique_users)
     }

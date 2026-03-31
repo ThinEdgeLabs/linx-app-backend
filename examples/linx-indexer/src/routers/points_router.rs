@@ -407,10 +407,8 @@ pub async fn get_share_image_handler(
         .await?
         .ok_or_else(|| AppError::NotFound("Referral code not found".to_string()))?;
 
-    let active_season = repo
-        .get_active_season()
-        .await?
-        .ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let active_season =
+        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
 
     let previous_season_number = active_season.season_number - 1;
     let seasons = repo.get_all_seasons().await?;
@@ -426,19 +424,15 @@ pub async fn get_share_image_handler(
 
     let points = snapshot.total_points;
 
-    let png_bytes = tokio::task::spawn_blocking(move || {
-        crate::share_image::generate_share_image(points, &referral_code)
-    })
-    .await
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to generate share image: {}", e)))?;
+    let png_bytes =
+        tokio::task::spawn_blocking(move || crate::share_image::generate_share_image(points, &referral_code))
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to generate share image: {}", e)))?;
 
     Ok((
         StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "image/png"),
-            (header::CACHE_CONTROL, "public, max-age=300"),
-        ],
+        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=300")],
         png_bytes,
     ))
 }
