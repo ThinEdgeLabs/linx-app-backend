@@ -1,22 +1,25 @@
 use std::sync::LazyLock;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use tiny_skia::Pixmap;
 use usvg::fontdb;
 
 const SCALE: f32 = 3.0;
+const DEFAULT_TEMPLATE_PATH: &str = "assets/share_background.svg";
 
-/// Pre-rendered background pixmap (expensive, done once on first use)
-static BACKGROUND: LazyLock<Pixmap> = LazyLock::new(|| {
-    let svg_str = include_str!("../assets/share_background.svg");
+/// Pre-rendered background pixmap (expensive, done once on first use).
+/// Reads the SVG from SHARE_TEMPLATE_PATH env var or /app/assets/share_background.svg.
+static BACKGROUND: LazyLock<Result<Pixmap, String>> = LazyLock::new(|| {
+    let path = std::env::var("SHARE_TEMPLATE_PATH").unwrap_or_else(|_| DEFAULT_TEMPLATE_PATH.to_string());
+    let svg_str = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
     let options = usvg::Options::default();
-    let tree = usvg::Tree::from_str(svg_str, &options).expect("Failed to parse background SVG");
+    let tree = usvg::Tree::from_str(&svg_str, &options).map_err(|e| format!("Failed to parse SVG: {}", e))?;
     let size = tree.size();
     let width = (size.width() * SCALE) as u32;
     let height = (size.height() * SCALE) as u32;
-    let mut pixmap = Pixmap::new(width, height).expect("Failed to create background pixmap");
+    let mut pixmap = Pixmap::new(width, height).ok_or("Failed to create pixmap")?;
     resvg::render(&tree, tiny_skia::Transform::from_scale(SCALE, SCALE), &mut pixmap.as_mut());
-    pixmap
+    Ok(pixmap)
 });
 
 static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
@@ -27,7 +30,7 @@ static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
 
 pub fn generate_share_image(points: i32, referral_code: &str) -> Result<Vec<u8>> {
     // Clone the pre-rendered background
-    let mut pixmap = BACKGROUND.clone();
+    let mut pixmap = BACKGROUND.as_ref().map_err(|e| anyhow!("Background not available: {}", e))?.clone();
 
     // Render a small SVG with just the dynamic text
     let formatted_points = format_with_commas(points);
@@ -85,6 +88,13 @@ mod tests {
 
     #[test]
     fn test_generate_share_image() {
+        // SAFETY: test runs single-threaded, no concurrent env reads
+        unsafe {
+            std::env::set_var(
+                "SHARE_TEMPLATE_PATH",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/share_background.svg"),
+            );
+        }
         let result = generate_share_image(65992, "CLEAN-RAVEN-730");
         assert!(result.is_ok());
         let png_bytes = result.unwrap();
