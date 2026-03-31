@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use tiny_skia::Pixmap;
 use usvg::fontdb;
 

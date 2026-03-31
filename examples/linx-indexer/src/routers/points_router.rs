@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
 };
 use bento_server::{AppState, error::AppError};
-use bigdecimal::BigDecimal;
+// use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
@@ -87,16 +87,16 @@ fn default_limit() -> i64 {
 
 // ==================== Helper Functions ====================
 
-fn calculate_token_allocation(user_points: i32, total_points: i64, tokens_allocation: &BigDecimal) -> String {
-    if total_points == 0 || user_points == 0 {
-        return "0".to_string();
-    }
-    let user_bd = BigDecimal::from(user_points);
-    let total_bd = BigDecimal::from(total_points);
-    let allocation = ((user_bd / total_bd) * tokens_allocation).round(0);
-    let decimals = BigDecimal::from(10u64.pow(18));
-    (allocation * decimals).to_string()
-}
+// fn calculate_token_allocation(user_points: i32, total_points: i64, tokens_allocation: &BigDecimal) -> String {
+//     if total_points == 0 || user_points == 0 {
+//         return "0".to_string();
+//     }
+//     let user_bd = BigDecimal::from(user_points);
+//     let total_bd = BigDecimal::from(total_points);
+//     let allocation = ((user_bd / total_bd) * tokens_allocation).round(0);
+//     let decimals = BigDecimal::from(10u64.pow(18));
+//     (allocation * decimals).to_string()
+// }
 
 // ==================== Handler Functions ====================
 
@@ -174,7 +174,7 @@ pub async fn get_user_points_handler(
     };
 
     let snapshot = repo.get_latest_snapshot(&address, season.id).await?;
-    let total_points = repo.get_total_points_for_season(season.id).await?;
+    // let total_points = repo.get_total_points_for_season(season.id).await?;
 
     match snapshot {
         Some(snapshot) => {
