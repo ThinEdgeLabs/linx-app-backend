@@ -38,6 +38,7 @@ RUN apt-get update && \
     ca-certificates \
     fontconfig \
     fonts-liberation \
+    && fc-cache -f \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
