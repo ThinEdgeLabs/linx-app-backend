@@ -410,7 +410,7 @@ pub async fn get_share_image_handler(
     let active_season =
         repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
 
-    let previous_season_number = active_season.season_number - 1;
+    let previous_season_number = (active_season.season_number - 1).max(1);
     let seasons = repo.get_all_seasons().await?;
     let season = seasons
         .into_iter()
