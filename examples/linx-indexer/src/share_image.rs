@@ -37,7 +37,7 @@ static BACKGROUND_LANDSCAPE: LazyLock<Result<Pixmap, String>> =
 static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     // Try loading fonts from common Linux paths first (for Docker containers),
-    // then fall back to system fonts (for macOS/local dev)
+    // then fall back to system fonts
     let font_dirs = ["/usr/share/fonts", "/usr/local/share/fonts"];
     for dir in &font_dirs {
         if std::path::Path::new(dir).exists() {
@@ -69,8 +69,8 @@ pub fn generate_share_image(points: i32, referral_code: &str, format: ImageForma
             let formatted_points = format_with_commas(points);
             let svg = format!(
                 r#"<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
-  <text x="325" y="313" text-anchor="middle" fill="white" font-size="60" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
-  <text x="325" y="528" text-anchor="middle" fill="white" font-size="24" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{referral_code}</text>
+  <text x="325" y="330" text-anchor="middle" fill="white" font-size="90" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
+  <text x="325" y="545" text-anchor="middle" fill="white" font-size="40" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{referral_code}</text>
 </svg>"#
             );
             (bg, LANDSCAPE_SCALE, svg)
