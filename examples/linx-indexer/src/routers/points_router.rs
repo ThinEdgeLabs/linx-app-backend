@@ -392,14 +392,32 @@ pub async fn get_referral_details_handler(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ShareImageQuery {
+    /// Image format: "portrait" (default) or "landscape"
+    #[serde(default = "default_format")]
+    pub format: String,
+}
+
+fn default_format() -> String {
+    "portrait".to_string()
+}
+
 /// Get share image
 ///
 /// Returns a PNG image for social sharing, showing the user's previous season points and referral code.
 /// The path parameter is the user's referral code (not their address) to avoid exposing addresses in shared links.
 pub async fn get_share_image_handler(
     Path(referral_code): Path<String>,
+    Query(query): Query<ShareImageQuery>,
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {
+    let image_format = match query.format.as_str() {
+        "portrait" => crate::share_image::ImageFormat::Portrait,
+        "landscape" => crate::share_image::ImageFormat::Landscape,
+        _ => return Err(AppError::BadRequest("Invalid format: must be 'portrait' or 'landscape'".to_string())),
+    };
+
     let repo = PointsRepository::new(state.db.clone());
 
     let referral = repo
@@ -424,11 +442,12 @@ pub async fn get_share_image_handler(
 
     let points = snapshot.total_points;
 
-    let png_bytes =
-        tokio::task::spawn_blocking(move || crate::share_image::generate_share_image(points, &referral_code))
-            .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to generate share image: {}", e)))?;
+    let png_bytes = tokio::task::spawn_blocking(move || {
+        crate::share_image::generate_share_image(points, &referral_code, image_format)
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to generate share image: {}", e)))?;
 
     Ok((
         StatusCode::OK,
