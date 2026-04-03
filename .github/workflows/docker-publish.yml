@@ -62,7 +62,7 @@ jobs:
             tags=$(doctl registry repository list-tags "$repo" --format Tag,UpdatedAt --no-header | grep -v '^latest' | sort -k2 -r | tail -n +6 | awk '{print $1}')
             for tag in $tags; do
               echo "Deleting $repo:$tag"
-              doctl registry repository delete-tag "$repo" --tag "$tag" --force
+              doctl registry repository delete-tag "$repo" "$tag" --force
             done
           done
 
