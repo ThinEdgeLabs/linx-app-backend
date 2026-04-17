@@ -458,6 +458,7 @@ impl LendingRepository {
                  SELECT DISTINCT ON (address, market_id) \
                         supply_amount_usd, borrow_amount_usd, collateral_amount_usd \
                  FROM lending_position_snapshots \
+                 WHERE timestamp > NOW() - INTERVAL '30 minutes' \
                  ORDER BY address, market_id, timestamp DESC \
              ) latest",
         )
@@ -481,6 +482,7 @@ impl LendingRepository {
                             address, market_id, \
                             supply_amount_usd, borrow_amount_usd, collateral_amount_usd \
                      FROM lending_position_snapshots \
+                     WHERE timestamp > NOW() - INTERVAL '30 minutes' \
                      ORDER BY address, market_id, timestamp DESC \
                  ) s \
                  GROUP BY market_id \
