@@ -56,6 +56,7 @@ services:
     restart: on-failure
     volumes:
       - ./examples/linx-indexer/config.toml:/app/config.toml
+      - ./examples/linx-indexer/assets/:/app/assets/:ro
     networks:
       - bento-network
       - traefik
@@ -77,8 +78,6 @@ services:
         condition: service_healthy
     volumes:
       - ./examples/linx-indexer/config.toml:/app/config.toml
-      - ./examples/linx-indexer/migrations:/app/migrations
-      - ./examples/linx-indexer/src/schema.rs:/app/src/schema.rs
     networks:
       - bento-network
     labels:

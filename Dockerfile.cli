@@ -48,6 +48,7 @@ COPY --from=builder /app/cli /app/
 COPY --from=builder /app/points /app/
 COPY --from=builder /app/gap_detector /app/
 COPY --from=builder /app/snapshots /app/
+COPY --from=builder /app/examples/linx-indexer/migrations /app/migrations
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 
 WORKDIR /app
