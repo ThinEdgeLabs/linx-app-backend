@@ -58,8 +58,8 @@ impl MarketApyService {
 
             snapshots.push(NewMarketApySnapshot {
                 market_id: market.id.clone(),
-                borrow_rate: borrow_apy,
-                supply_rate: supply_apy,
+                borrow_rate: borrow_apy.with_scale(3),
+                supply_rate: supply_apy.with_scale(3),
                 snapshot_timestamp: snapshot_time,
             });
         }

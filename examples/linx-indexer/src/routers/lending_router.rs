@@ -280,16 +280,16 @@ pub struct LendingStatsResponse {
 )]
 pub async fn get_lending_stats(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let lending_repo = LendingRepository::new(state.db.clone());
-    let totals = lending_repo.get_latest_position_snapshot_totals().await?;
-    let apy_30d = lending_repo.get_30d_avg_apy_tvl_weighted().await?;
-
-    let tvl_usd = &totals.total_supply_usd + &totals.total_collateral_usd;
+    let stats = lending_repo
+        .get_latest_lending_stats()
+        .await?
+        .ok_or_else(|| AppError::NotFound("no lending stats snapshot available yet".to_string()))?;
 
     Ok(Json(LendingStatsResponse {
-        tvl_usd,
-        total_deposited_usd: totals.total_supply_usd,
-        total_borrowed_usd: totals.total_borrow_usd,
-        total_collateral_usd: totals.total_collateral_usd,
-        apy_30d_avg: apy_30d,
+        tvl_usd: stats.tvl_usd,
+        total_deposited_usd: stats.total_supply_usd,
+        total_borrowed_usd: stats.total_borrow_usd,
+        total_collateral_usd: stats.total_collateral_usd,
+        apy_30d_avg: stats.apy_30d_avg,
     }))
 }

@@ -90,6 +90,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    lending_stats_snapshots (id) {
+        id -> Int4,
+        total_supply_usd -> Numeric,
+        total_borrow_usd -> Numeric,
+        total_collateral_usd -> Numeric,
+        tvl_usd -> Numeric,
+        apy_30d_avg -> Numeric,
+        snapshot_timestamp -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     linx_transactions (id) {
         id -> Int8,
         tx_id -> Text,
@@ -264,6 +277,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lending_events,
     lending_markets,
     lending_position_snapshots,
+    lending_stats_snapshots,
     linx_transactions,
     loan_actions,
     loan_details,

@@ -5,7 +5,9 @@ use bento_core::new_db_pool;
 use linx_indexer::config::AppConfig;
 use linx_indexer::jobs::{PeriodicJob, run_job_forever};
 use linx_indexer::services::price::token_service::TokenService;
-use linx_indexer::services::{MarketApyService, MarketStateSnapshotService, PositionSnapshotService};
+use linx_indexer::services::{
+    MarketApyService, MarketStateSnapshotService, PositionSnapshotService, StatsSnapshotService,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -72,7 +74,13 @@ fn build_jobs(
             app_config.linx_address.clone(),
             app_config.linx_group,
         )),
-        Arc::new(MarketApyService::new(db_pool, network, app_config.linx_address.clone(), app_config.linx_group)),
+        Arc::new(MarketApyService::new(
+            db_pool.clone(),
+            network,
+            app_config.linx_address.clone(),
+            app_config.linx_group,
+        )),
+        Arc::new(StatsSnapshotService::new(db_pool)),
     ]
 }
 

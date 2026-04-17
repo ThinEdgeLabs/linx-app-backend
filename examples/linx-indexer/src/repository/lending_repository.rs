@@ -11,8 +11,9 @@ use mockall::automock;
 
 use crate::{
     models::{
-        Apy30d, LendingEvent, Market, NewLendingEvent, NewMarketApySnapshot, NewMarketStateSnapshot,
-        NewPositionSnapshot, Position, PositionSnapshot, PositionTotals, Timeframe, UserPositionHistoryPoint,
+        Apy30d, LendingEvent, LendingStatsSnapshot, Market, NewLendingEvent, NewLendingStatsSnapshot,
+        NewMarketApySnapshot, NewMarketStateSnapshot, NewPositionSnapshot, Position, PositionSnapshot, PositionTotals,
+        Timeframe, UserPositionHistoryPoint,
     },
     schema::{self},
 };
@@ -501,6 +502,24 @@ impl LendingRepository {
         .await?;
 
         Ok(row.apy_30d_avg)
+    }
+
+    pub async fn insert_lending_stats_snapshot(&self, snapshot: &NewLendingStatsSnapshot) -> Result<()> {
+        use schema::lending_stats_snapshots::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        diesel::insert_into(lending_stats_snapshots).values(snapshot).execute(&mut conn).await?;
+        Ok(())
+    }
+
+    pub async fn get_latest_lending_stats(&self) -> Result<Option<LendingStatsSnapshot>> {
+        use schema::lending_stats_snapshots::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let row = lending_stats_snapshots
+            .order(snapshot_timestamp.desc())
+            .first::<LendingStatsSnapshot>(&mut conn)
+            .await
+            .optional()?;
+        Ok(row)
     }
 }
 

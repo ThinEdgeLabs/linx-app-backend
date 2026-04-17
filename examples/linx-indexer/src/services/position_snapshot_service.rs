@@ -155,11 +155,11 @@ impl PositionSnapshotService {
                         address: position.address.clone(),
                         market_id: market.id.clone(),
                         supply_amount: raw_supply_amount,
-                        supply_amount_usd,
+                        supply_amount_usd: supply_amount_usd.with_scale(2),
                         borrow_amount: raw_borrow_amount,
-                        borrow_amount_usd,
+                        borrow_amount_usd: borrow_amount_usd.with_scale(2),
                         collateral_amount: position.collateral.clone(),
-                        collateral_amount_usd,
+                        collateral_amount_usd: collateral_amount_usd.with_scale(2),
                         timestamp: chrono::Utc::now().naive_utc(),
                     };
                     snapshots.push(position_snapshot);
