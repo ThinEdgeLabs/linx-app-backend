@@ -5,7 +5,8 @@ use axum::{
     routing::get,
 };
 use bento_server::{AppState, error::AppError};
-use serde::Deserialize;
+use bigdecimal::BigDecimal;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
@@ -24,6 +25,7 @@ impl LendingRouter {
             .route("/lending/v1/earn-activity", get(get_earn_activity))
             .route("/lending/v1/positions", get(get_positions))
             .route("/lending/v1/history/user-positions", get(get_user_position_history))
+            .route("/lending/v1/stats", get(get_lending_stats))
     }
 }
 
@@ -248,4 +250,46 @@ pub async fn get_user_position_history(
         lending_repo.get_user_position_history(&query.address, query.market_id.as_deref(), query.timeframe).await?;
 
     Ok(Json(history))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LendingStatsResponse {
+    #[schema(value_type = String, example = "1234.56")]
+    pub tvl_usd: BigDecimal,
+    #[schema(value_type = String, example = "2000.00")]
+    pub total_deposited_usd: BigDecimal,
+    #[schema(value_type = String, example = "500.00")]
+    pub total_borrowed_usd: BigDecimal,
+    #[schema(value_type = String, example = "100.00")]
+    pub total_collateral_usd: BigDecimal,
+    #[schema(value_type = String, example = "0.0543")]
+    pub apy_30d_avg: BigDecimal,
+}
+
+#[utoipa::path(
+    get,
+    path = "/lending/stats",
+    tag = "Stats",
+    summary = "Get aggregate lending stats",
+    description = "Single aggregate across all markets: TVL (deposited − borrowed + collateral), totals, and \
+        30-day rolling-average APY (TVL-weighted across markets, sourced from the IRM contract).",
+    responses(
+        (status = 200, description = "Aggregate lending stats", body = LendingStatsResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_lending_stats(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let lending_repo = LendingRepository::new(state.db.clone());
+    let totals = lending_repo.get_latest_position_snapshot_totals().await?;
+    let apy_30d = lending_repo.get_30d_avg_apy_tvl_weighted().await?;
+
+    let tvl_usd = &totals.total_supply_usd + &totals.total_collateral_usd;
+
+    Ok(Json(LendingStatsResponse {
+        tvl_usd,
+        total_deposited_usd: totals.total_supply_usd,
+        total_borrowed_usd: totals.total_borrow_usd,
+        total_collateral_usd: totals.total_collateral_usd,
+        apy_30d_avg: apy_30d,
+    }))
 }

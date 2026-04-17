@@ -1,11 +1,15 @@
+use crate::jobs::PeriodicJob;
 use crate::models::NewMarketStateSnapshot;
+use crate::random_tx_id;
 use crate::repository::LendingRepository;
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use bento_core::{Client, DbPool};
 use bento_trait::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, network::Network};
-use bigdecimal::{BigDecimal, ToPrimitive, Zero};
+use bigdecimal::BigDecimal;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct MarketStateSnapshotService {
     lending_repository: LendingRepository,
@@ -33,15 +37,14 @@ impl MarketStateSnapshotService {
         for market in markets {
             tracing::debug!("Fetching market state for market {}", market.id);
 
-            match self.get_market_state(&market.id).await {
-                Ok(market_state) => {
+            match fetch_market_state(&self.client, &self.linx_address, self.linx_group, &market.id).await {
+                Ok(state) => {
                     snapshots.push(NewMarketStateSnapshot {
                         market_id: market.id.clone(),
-                        total_supply_assets: market_state.total_supply_assets,
-                        total_supply_shares: market_state.total_supply_shares,
-                        total_borrow_assets: market_state.total_borrow_assets,
-                        total_borrow_shares: market_state.total_borrow_shares,
-                        interest_rate: Some(market_state.interest_rate),
+                        total_supply_assets: state.total_supply_assets,
+                        total_supply_shares: state.total_supply_shares,
+                        total_borrow_assets: state.total_borrow_assets,
+                        total_borrow_shares: state.total_borrow_shares,
                         snapshot_timestamp: snapshot_time,
                     });
                 }
@@ -59,99 +62,83 @@ impl MarketStateSnapshotService {
 
         Ok(())
     }
+}
 
-    /// Run scheduler that generates snapshots every 5 minutes
-    pub async fn run_scheduler(&self) -> Result<()> {
-        let interval = tokio::time::Duration::from_secs(300); // 5 minutes
-        let mut interval_timer = tokio::time::interval(interval);
-
-        tracing::info!("Market state snapshot scheduler started (5 minute interval)");
-
-        loop {
-            interval_timer.tick().await;
-
-            tracing::info!("Starting scheduled market state snapshot generation...");
-            if let Err(e) = self.generate_snapshots().await {
-                tracing::error!("Error during scheduled snapshot generation: {}", e);
-            } else {
-                tracing::info!("Scheduled market state snapshot generation completed successfully.");
-            }
-        }
+#[async_trait]
+impl PeriodicJob for MarketStateSnapshotService {
+    fn name(&self) -> &'static str {
+        "market-state-snapshots"
     }
 
-    /// Get current market state from the blockchain using helper contract
-    async fn get_market_state(&self, market_id: &str) -> Result<MarketState> {
-        let method_index = 5; // getMarketState method
-        let tx_id = crate::random_tx_id();
-
-        let params = CallContractParams {
-            tx_id: Some(tx_id.clone()),
-            group: self.linx_group,
-            address: self.linx_address.clone(),
-            method_index,
-            args: Some(vec![serde_json::json!({
-                "type": "ByteVec",
-                "value": market_id,
-            })]),
-            world_state_block_hash: None,
-            interested_contracts: None,
-            input_assets: None,
-        };
-
-        let result = self.client.call_contract(params).await.context("Failed to call contract")?;
-
-        match result.result_type {
-            CallContractResultType::CallContractFailed => {
-                anyhow::bail!("Contract call failed for market {}", market_id);
-            }
-            CallContractResultType::CallContractSucceeded => {
-                let returns = result.returns.ok_or_else(|| anyhow::anyhow!("No returns in contract call"))?;
-
-                if returns.len() != 6 {
-                    anyhow::bail!("Expected 6 return values, got {}", returns.len());
-                }
-
-                let total_supply_assets = self.extract_bigdecimal(&returns[0])?;
-                let total_supply_shares = self.extract_bigdecimal(&returns[1])?;
-                let total_borrow_assets = self.extract_bigdecimal(&returns[2])?;
-                let total_borrow_shares = self.extract_bigdecimal(&returns[3])?;
-                let _timestamp = self.extract_bigdecimal(&returns[4])?.to_i64().unwrap_or(0);
-                let _fee = self.extract_bigdecimal(&returns[5])?;
-
-                // Calculate interest rate (simple estimate based on utilization)
-                let interest_rate = if total_supply_assets.is_zero() {
-                    BigDecimal::zero()
-                } else {
-                    &total_borrow_assets / &total_supply_assets
-                };
-
-                Ok(MarketState {
-                    total_supply_assets,
-                    total_supply_shares,
-                    total_borrow_assets,
-                    total_borrow_shares,
-                    interest_rate,
-                })
-            }
-        }
+    fn interval(&self) -> Duration {
+        Duration::from_secs(1800)
     }
 
-    fn extract_bigdecimal(&self, value: &serde_json::Value) -> Result<BigDecimal> {
-        value
-            .as_object()
-            .and_then(|obj| obj.get("value"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Invalid object structure"))?
-            .parse::<BigDecimal>()
-            .map_err(|e| anyhow::anyhow!("Failed to parse BigDecimal: {}", e))
+    async fn tick(&self) -> anyhow::Result<()> {
+        self.generate_snapshots().await
     }
 }
 
+/// Raw market state fetched from the linx `getMarketState` (method 5) helper contract.
+/// All fields are preserved at their on-chain U256 scale so callers can forward them
+/// to other contracts (e.g. the IRM's `borrowRateView`) without re-scaling.
 #[derive(Debug, Clone)]
-struct MarketState {
-    total_supply_assets: BigDecimal,
-    total_supply_shares: BigDecimal,
-    total_borrow_assets: BigDecimal,
-    total_borrow_shares: BigDecimal,
-    interest_rate: BigDecimal,
+pub struct RawMarketState {
+    pub total_supply_assets: BigDecimal,
+    pub total_supply_shares: BigDecimal,
+    pub total_borrow_assets: BigDecimal,
+    pub total_borrow_shares: BigDecimal,
+    pub last_update: BigDecimal,
+    pub fee: BigDecimal,
+}
+
+pub async fn fetch_market_state(
+    client: &Client,
+    linx_address: &str,
+    linx_group: u32,
+    market_id: &str,
+) -> Result<RawMarketState> {
+    let params = CallContractParams {
+        tx_id: Some(random_tx_id()),
+        group: linx_group,
+        address: linx_address.to_string(),
+        method_index: 4, // getMarketState
+        args: Some(vec![serde_json::json!({ "type": "ByteVec", "value": market_id })]),
+        world_state_block_hash: None,
+        interested_contracts: None,
+        input_assets: None,
+    };
+
+    let result = client.call_contract(params).await.context("getMarketState call failed")?;
+
+    match result.result_type {
+        CallContractResultType::CallContractFailed => {
+            anyhow::bail!("getMarketState failed for market {}", market_id);
+        }
+        CallContractResultType::CallContractSucceeded => {}
+    }
+
+    let returns = result.returns.ok_or_else(|| anyhow::anyhow!("getMarketState returned no values"))?;
+    if returns.len() != 6 {
+        anyhow::bail!("expected 6 returns from getMarketState, got {}", returns.len());
+    }
+
+    Ok(RawMarketState {
+        total_supply_assets: extract_bigdecimal(&returns[0])?,
+        total_supply_shares: extract_bigdecimal(&returns[1])?,
+        total_borrow_assets: extract_bigdecimal(&returns[2])?,
+        total_borrow_shares: extract_bigdecimal(&returns[3])?,
+        last_update: extract_bigdecimal(&returns[4])?,
+        fee: extract_bigdecimal(&returns[5])?,
+    })
+}
+
+fn extract_bigdecimal(value: &serde_json::Value) -> Result<BigDecimal> {
+    value
+        .as_object()
+        .and_then(|obj| obj.get("value"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid contract return structure: {}", value))?
+        .parse::<BigDecimal>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse BigDecimal: {}", e))
 }

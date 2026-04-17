@@ -72,7 +72,14 @@ impl ProcessorTrait for LendingProcessor {
             all_markets.into_iter().map(|market| (market.id.clone(), market)).collect();
 
         for block_events in &bwe {
+            let block = block_events.block.clone();
             let block_events = self.extract_lending_events(block_events, &market_map);
+            tracing::info!(
+                "Extracted {} lending events from block {} with hash {}",
+                block_events.len(),
+                block.height,
+                block.hash
+            );
             events.extend(block_events);
         }
 
@@ -156,7 +163,9 @@ impl LendingProcessor {
         event: &ContractEventByBlockHash,
         markets_map: &HashMap<String, Market>,
     ) -> Option<NewLendingEvent> {
-        if event.contract_address == self.linx_address && event.event_index == 10 {
+        if event.contract_address == self.linx_address && event.event_index == 4 {
+            self.parse_market_created_lending_event(block, event)
+        } else if event.contract_address == self.linx_address && event.event_index == 10 {
             self.parse_supply_event(block, event, markets_map)
         } else if event.contract_address == self.linx_address && event.event_index == 11 {
             self.parse_withdraw_event(block, event, markets_map)
@@ -175,6 +184,28 @@ impl LendingProcessor {
         } else {
             None
         }
+    }
+
+    fn parse_market_created_lending_event(
+        &self,
+        block: &RichBlockEntry,
+        event: &ContractEventByBlockHash,
+    ) -> Option<NewLendingEvent> {
+        let market_id = self.extract_string_field(&event.fields, 0)?;
+        let block_time = chrono::DateTime::from_timestamp(block.timestamp / 1000, 0).unwrap_or_default().naive_utc();
+        Some(NewLendingEvent {
+            market_id,
+            event_type: "MarketCreated".to_string(),
+            token_id: String::new(),
+            on_behalf: String::new(),
+            amount: BigDecimal::from(0),
+            shares: BigDecimal::from(0),
+            transaction_id: event.tx_id.clone(),
+            event_index: event.event_index,
+            block_time,
+            created_at: chrono::Utc::now().naive_utc(),
+            fields: serde_json::to_value(&event.fields).unwrap_or_default(),
+        })
     }
 
     fn parse_borrow_event(

@@ -13,9 +13,14 @@ impl ContractsProvider for Client {
         let url = Url::parse(&format!("{}/{}", self.base_url, endpoint))?;
         let json_body = serde_json::to_string(&params)?;
         let response = self.inner.post(url).header("Content-Type", "application/json").body(json_body).send().await?;
-        let response = response.error_for_status()?;
 
-        let result: CallContractResult = response.json().await?;
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            tracing::error!("call_contract failed (HTTP {}): {}", status, body);
+            anyhow::bail!("call_contract HTTP {}: {}", status, body);
+        }
+        let result: CallContractResult = serde_json::from_str(&body)?;
         Ok(result)
     }
 }

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub mod config;
 pub mod constants;
 pub mod crypto;
+pub mod jobs;
 pub mod models;
 pub mod processors;
 pub mod repository;

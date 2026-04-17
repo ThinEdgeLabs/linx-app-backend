@@ -84,6 +84,10 @@ pub struct PositionSnapshot {
     pub borrow_amount: BigDecimal,
     #[schema(value_type = String)]
     pub borrow_amount_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub collateral_amount: BigDecimal,
+    #[schema(value_type = String)]
+    pub collateral_amount_usd: BigDecimal,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -97,6 +101,8 @@ pub struct NewPositionSnapshot {
     pub timestamp: NaiveDateTime,
     pub borrow_amount: BigDecimal,
     pub borrow_amount_usd: BigDecimal,
+    pub collateral_amount: BigDecimal,
+    pub collateral_amount_usd: BigDecimal,
 }
 
 #[derive(Serialize, ToSchema, Debug)]
@@ -142,8 +148,6 @@ pub struct MarketStateSnapshot {
     #[schema(value_type = String)]
     pub total_borrow_shares: BigDecimal,
     #[schema(value_type = String)]
-    pub interest_rate: Option<BigDecimal>,
-    #[schema(value_type = String)]
     pub snapshot_timestamp: NaiveDateTime,
     #[schema(value_type = String)]
     pub created_at: NaiveDateTime,
@@ -158,7 +162,6 @@ pub struct NewMarketStateSnapshot {
     pub total_supply_shares: BigDecimal,
     pub total_borrow_assets: BigDecimal,
     pub total_borrow_shares: BigDecimal,
-    pub interest_rate: Option<BigDecimal>,
     pub snapshot_timestamp: NaiveDateTime,
 }
 
@@ -191,6 +194,51 @@ impl Timeframe {
             Timeframe::ThreeMonths | Timeframe::OneYear | Timeframe::All => "day",
         }
     }
+}
+
+#[derive(Queryable, Debug, Clone, Serialize, ToSchema)]
+#[diesel(table_name = schema::market_apy_snapshots)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct MarketApySnapshot {
+    pub id: i32,
+    pub market_id: String,
+    #[schema(value_type = String)]
+    pub borrow_rate: BigDecimal,
+    #[schema(value_type = String)]
+    pub supply_rate: BigDecimal,
+    #[schema(value_type = String)]
+    pub snapshot_timestamp: NaiveDateTime,
+    #[schema(value_type = String)]
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::market_apy_snapshots)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMarketApySnapshot {
+    pub market_id: String,
+    pub borrow_rate: BigDecimal,
+    pub supply_rate: BigDecimal,
+    pub snapshot_timestamp: NaiveDateTime,
+}
+
+#[derive(QueryableByName, Debug, Clone, Serialize, ToSchema)]
+pub struct PositionTotals {
+    #[diesel(sql_type = Numeric)]
+    #[schema(value_type = String)]
+    pub total_supply_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    #[schema(value_type = String)]
+    pub total_borrow_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    #[schema(value_type = String)]
+    pub total_collateral_usd: BigDecimal,
+}
+
+#[derive(QueryableByName, Debug, Clone)]
+pub struct Apy30d {
+    #[diesel(sql_type = Numeric)]
+    pub apy_30d_avg: BigDecimal,
 }
 
 #[derive(QueryableByName, Debug, Clone, Serialize, ToSchema)]

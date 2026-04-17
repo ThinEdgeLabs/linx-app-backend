@@ -724,6 +724,8 @@ mod tests {
             supply_amount_usd: BigDecimal::from_str(supply_usd).unwrap(),
             borrow_amount: BigDecimal::zero(),
             borrow_amount_usd: BigDecimal::from_str(borrow_usd).unwrap(),
+            collateral_amount: BigDecimal::zero(),
+            collateral_amount_usd: BigDecimal::zero(),
             timestamp,
         }
     }

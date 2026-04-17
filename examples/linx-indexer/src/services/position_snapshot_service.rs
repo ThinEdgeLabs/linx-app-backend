@@ -1,26 +1,37 @@
 use crate::constants::{VIRTUAL_ASSETS, VIRTUAL_SHARES};
+use crate::jobs::PeriodicJob;
 use crate::models::NewPositionSnapshot;
 use crate::services::price::token_service::TokenService;
 use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
+use async_trait::async_trait;
 use bento_core::{Client, DbPool};
 use bento_trait::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, utils::timestamp_millis_to_naive_datetime};
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct PositionSnapshotService {
     lending_repository: LendingRepository,
     client: Client,
     token_service: TokenService,
+    linx_address: String,
+    linx_group: u32,
 }
 
 impl PositionSnapshotService {
-    pub fn new(db_pool: Arc<DbPool>, client: Client, token_service: TokenService) -> Self {
-        Self { lending_repository: LendingRepository::new(db_pool), client, token_service }
+    pub fn new(
+        db_pool: Arc<DbPool>,
+        client: Client,
+        token_service: TokenService,
+        linx_address: String,
+        linx_group: u32,
+    ) -> Self {
+        Self { lending_repository: LendingRepository::new(db_pool), client, token_service, linx_address, linx_group }
     }
 
-    pub async fn generate_snapshots(&self, linx_address: &str, linx_group: u32) -> anyhow::Result<()> {
+    pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
         let markets = self.lending_repository.get_all_markets().await?;
         for market in markets {
             tracing::info!("Calculating position snapshots for market {}", market.id);
@@ -53,7 +64,33 @@ impl PositionSnapshotService {
                 }
             };
 
-            let market_state = match self.get_market_state(&market.id, linx_address, linx_group).await {
+            let collateral_token_info = match self.token_service.get_token_info(&market.collateral_token).await {
+                Ok(info) => info,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to get collateral token info for {} in market {}: {}",
+                        market.collateral_token,
+                        market.id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let collateral_token_price = match self.token_service.get_token_price(&market.collateral_token).await {
+                Ok(price) => price,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to get collateral token price for {} in market {}: {}",
+                        market.collateral_token,
+                        market.id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            let market_state = match self.get_market_state(&market.id).await {
                 Ok(state) => state,
                 Err(e) => {
                     tracing::error!("Failed to fetch market state for market {}: {}", market.id, e);
@@ -96,18 +133,22 @@ impl PositionSnapshotService {
                     // Normalize the amounts using token decimals
                     let normalized_supply_amount = token_info.convert_to_decimal(&raw_supply_amount);
                     let normalized_borrow_amount = token_info.convert_to_decimal(&raw_borrow_amount);
+                    let normalized_collateral_amount = collateral_token_info.convert_to_decimal(&position.collateral);
 
-                    // Calculate USD values (token_price is already normalized)
+                    // Calculate USD values (prices already normalized)
                     let supply_amount_usd = &normalized_supply_amount * &token_price;
                     let borrow_amount_usd = &normalized_borrow_amount * &token_price;
+                    let collateral_amount_usd = &normalized_collateral_amount * &collateral_token_price;
 
                     tracing::debug!(
-                        "User {}: supply={} (${:.2}), borrow={} (${:.2})",
+                        "User {}: supply={} (${:.2}), borrow={} (${:.2}), collateral={} (${:.2})",
                         position.address,
                         normalized_supply_amount,
                         supply_amount_usd,
                         normalized_borrow_amount,
-                        borrow_amount_usd
+                        borrow_amount_usd,
+                        normalized_collateral_amount,
+                        collateral_amount_usd
                     );
 
                     let position_snapshot = NewPositionSnapshot {
@@ -117,6 +158,8 @@ impl PositionSnapshotService {
                         supply_amount_usd,
                         borrow_amount: raw_borrow_amount,
                         borrow_amount_usd,
+                        collateral_amount: position.collateral.clone(),
+                        collateral_amount_usd,
                         timestamp: chrono::Utc::now().naive_utc(),
                     };
                     snapshots.push(position_snapshot);
@@ -129,18 +172,13 @@ impl PositionSnapshotService {
         Ok(())
     }
 
-    async fn get_market_state(
-        &self,
-        market_id: &str,
-        linx_address: &str,
-        linx_group: u32,
-    ) -> anyhow::Result<MarketState> {
+    async fn get_market_state(&self, market_id: &str) -> anyhow::Result<MarketState> {
         let method_index = 4;
         let tx_id = random_tx_id();
         let params = CallContractParams {
             tx_id: Some(tx_id.clone()),
-            group: linx_group,
-            address: linx_address.to_string(),
+            group: self.linx_group,
+            address: self.linx_address.clone(),
             method_index,
             args: Some(vec![serde_json::json!({
                 "type": "ByteVec",
@@ -210,21 +248,6 @@ impl PositionSnapshotService {
         }
     }
 
-    pub async fn run_scheduler(&self, linx_address: &str, linx_group: u32) -> anyhow::Result<()> {
-        let interval = tokio::time::Duration::from_secs(300); // 5 minutes
-        let mut interval_timer = tokio::time::interval(interval);
-
-        loop {
-            interval_timer.tick().await;
-            tracing::info!("Starting scheduled position snapshot generation...");
-            if let Err(e) = self.generate_snapshots(linx_address, linx_group).await {
-                tracing::error!("Error during scheduled snapshot generation: {}", e);
-            } else {
-                tracing::info!("Scheduled position snapshot generation completed successfully.");
-            }
-        }
-    }
-
     fn extract_bigdecimal_from_object(&self, value: &serde_json::Value) -> anyhow::Result<BigDecimal> {
         value
             .as_object()
@@ -233,5 +256,20 @@ impl PositionSnapshotService {
             .ok_or_else(|| anyhow::anyhow!("Invalid object structure"))?
             .parse::<BigDecimal>()
             .map_err(|e| anyhow::anyhow!("Failed to parse BigDecimal: {}", e))
+    }
+}
+
+#[async_trait]
+impl PeriodicJob for PositionSnapshotService {
+    fn name(&self) -> &'static str {
+        "position-snapshots"
+    }
+
+    fn interval(&self) -> Duration {
+        Duration::from_secs(300)
+    }
+
+    async fn tick(&self) -> anyhow::Result<()> {
+        self.generate_snapshots().await
     }
 }

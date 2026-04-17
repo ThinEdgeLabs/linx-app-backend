@@ -11,8 +11,8 @@ use mockall::automock;
 
 use crate::{
     models::{
-        LendingEvent, Market, NewLendingEvent, NewMarketStateSnapshot, NewPositionSnapshot, Position, PositionSnapshot,
-        Timeframe, UserPositionHistoryPoint,
+        Apy30d, LendingEvent, Market, NewLendingEvent, NewMarketApySnapshot, NewMarketStateSnapshot,
+        NewPositionSnapshot, Position, PositionSnapshot, PositionTotals, Timeframe, UserPositionHistoryPoint,
     },
     schema::{self},
 };
@@ -428,6 +428,78 @@ impl LendingRepository {
 
         Ok(events)
     }
+
+    pub async fn insert_market_apy_snapshots(&self, snapshots: &[NewMarketApySnapshot]) -> Result<()> {
+        if snapshots.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.db_pool.get().await?;
+
+        diesel::insert_into(schema::market_apy_snapshots::table)
+            .values(snapshots)
+            .on_conflict((schema::market_apy_snapshots::market_id, schema::market_apy_snapshots::snapshot_timestamp))
+            .do_nothing()
+            .execute(&mut conn)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Returns SUM of the latest supply/borrow/collateral USD across every (address, market) pair.
+    pub async fn get_latest_position_snapshot_totals(&self) -> Result<PositionTotals> {
+        let mut conn = self.db_pool.get().await?;
+
+        let row: PositionTotals = diesel::sql_query(
+            "SELECT COALESCE(SUM(supply_amount_usd), 0)     AS total_supply_usd, \
+                    COALESCE(SUM(borrow_amount_usd), 0)     AS total_borrow_usd, \
+                    COALESCE(SUM(collateral_amount_usd), 0) AS total_collateral_usd \
+             FROM ( \
+                 SELECT DISTINCT ON (address, market_id) \
+                        supply_amount_usd, borrow_amount_usd, collateral_amount_usd \
+                 FROM lending_position_snapshots \
+                 ORDER BY address, market_id, timestamp DESC \
+             ) latest",
+        )
+        .get_result(&mut conn)
+        .await?;
+
+        Ok(row)
+    }
+
+    /// 30-day rolling average supply APY across markets, weighted by each market's current TVL.
+    /// TVL per market = supply_usd − borrow_usd + collateral_usd on the most-recent snapshot per user.
+    pub async fn get_30d_avg_apy_tvl_weighted(&self) -> Result<BigDecimal> {
+        let mut conn = self.db_pool.get().await?;
+
+        let row: Apy30d = diesel::sql_query(
+            "WITH latest_market_tvl AS ( \
+                 SELECT market_id, \
+                        SUM(supply_amount_usd) - SUM(borrow_amount_usd) + SUM(collateral_amount_usd) AS tvl_usd \
+                 FROM ( \
+                     SELECT DISTINCT ON (address, market_id) \
+                            address, market_id, \
+                            supply_amount_usd, borrow_amount_usd, collateral_amount_usd \
+                     FROM lending_position_snapshots \
+                     ORDER BY address, market_id, timestamp DESC \
+                 ) s \
+                 GROUP BY market_id \
+             ), \
+             market_apy_30d AS ( \
+                 SELECT market_id, AVG(supply_rate) AS avg_rate \
+                 FROM market_apy_snapshots \
+                 WHERE snapshot_timestamp >= NOW() - INTERVAL '30 days' \
+                 GROUP BY market_id \
+             ) \
+             SELECT COALESCE(SUM(t.tvl_usd * a.avg_rate) / NULLIF(SUM(t.tvl_usd), 0), 0) AS apy_30d_avg \
+             FROM market_apy_30d a JOIN latest_market_tvl t USING (market_id) \
+             WHERE t.tvl_usd > 0",
+        )
+        .get_result(&mut conn)
+        .await?;
+
+        Ok(row.apy_30d_avg)
+    }
 }
 
 #[async_trait]
@@ -491,6 +563,28 @@ mod tests {
             .unwrap();
     }
 
+    /// The stats aggregation queries scan the whole table (no address filter), so tests
+    /// that exercise them need a clean slate across both snapshot tables.
+    async fn cleanup_all_stats_tables(pool: &Arc<Pool<AsyncPgConnection>>) {
+        let mut conn = pool.get().await.unwrap();
+        diesel::sql_query("DELETE FROM lending_position_snapshots").execute(&mut conn).await.unwrap();
+        diesel::sql_query("DELETE FROM market_apy_snapshots").execute(&mut conn).await.unwrap();
+    }
+
+    fn make_apy_snapshot(
+        market_id: &str,
+        borrow_rate: &str,
+        supply_rate: &str,
+        timestamp: NaiveDateTime,
+    ) -> NewMarketApySnapshot {
+        NewMarketApySnapshot {
+            market_id: market_id.to_string(),
+            borrow_rate: BigDecimal::from_str(borrow_rate).unwrap(),
+            supply_rate: BigDecimal::from_str(supply_rate).unwrap(),
+            snapshot_timestamp: timestamp,
+        }
+    }
+
     fn make_snapshot(
         address: &str,
         market_id: &str,
@@ -498,7 +592,17 @@ mod tests {
         borrow_usd: &str,
         timestamp: NaiveDateTime,
     ) -> NewPositionSnapshot {
-        // Raw token amounts are not used by the USD-based history query under test
+        make_snapshot_full(address, market_id, supply_usd, borrow_usd, "0", timestamp)
+    }
+
+    fn make_snapshot_full(
+        address: &str,
+        market_id: &str,
+        supply_usd: &str,
+        borrow_usd: &str,
+        collateral_usd: &str,
+        timestamp: NaiveDateTime,
+    ) -> NewPositionSnapshot {
         NewPositionSnapshot {
             address: address.to_string(),
             market_id: market_id.to_string(),
@@ -506,6 +610,8 @@ mod tests {
             supply_amount_usd: BigDecimal::from_str(supply_usd).unwrap(),
             borrow_amount: BigDecimal::from(0),
             borrow_amount_usd: BigDecimal::from_str(borrow_usd).unwrap(),
+            collateral_amount: BigDecimal::from(0),
+            collateral_amount_usd: BigDecimal::from_str(collateral_usd).unwrap(),
             timestamp,
         }
     }
@@ -701,5 +807,139 @@ mod tests {
         assert_eq!(result[0].borrow_amount_usd, BigDecimal::from_str("7.3").unwrap());
 
         cleanup_test_snapshots(&pool, test_addr).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn test_get_latest_position_snapshot_totals_picks_latest_per_user_market() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+
+        let repo = LendingRepository::new(pool.clone());
+        let base = NaiveDate::from_ymd_opt(2025, 3, 1).unwrap().and_hms_opt(10, 0, 0).unwrap();
+
+        // (alice, market_a): two snapshots — latest is the second (300 supply, 30 borrow, 5 collateral)
+        // (alice, market_b): single snapshot (50, 5, 1)
+        // (bob, market_a):   two snapshots — latest is the second (700 supply, 70 borrow, 9 collateral)
+        // Expected sums: supply = 300 + 50 + 700 = 1050; borrow = 30 + 5 + 70 = 105; collateral = 5 + 1 + 9 = 15
+        let snapshots = vec![
+            make_snapshot_full("alice", "market_a", "100.0", "10.0", "1.0", base),
+            make_snapshot_full("alice", "market_a", "300.0", "30.0", "5.0", base + Duration::hours(1)),
+            make_snapshot_full("alice", "market_b", "50.0", "5.0", "1.0", base),
+            make_snapshot_full("bob", "market_a", "400.0", "40.0", "4.0", base),
+            make_snapshot_full("bob", "market_a", "700.0", "70.0", "9.0", base + Duration::hours(2)),
+        ];
+        repo.insert_position_snapshots(&snapshots).await.unwrap();
+
+        let totals = repo.get_latest_position_snapshot_totals().await.unwrap();
+
+        assert_eq!(totals.total_supply_usd, BigDecimal::from_str("1050").unwrap());
+        assert_eq!(totals.total_borrow_usd, BigDecimal::from_str("105").unwrap());
+        assert_eq!(totals.total_collateral_usd, BigDecimal::from_str("15").unwrap());
+
+        cleanup_all_stats_tables(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn test_get_latest_position_snapshot_totals_empty() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+
+        let repo = LendingRepository::new(pool.clone());
+        let totals = repo.get_latest_position_snapshot_totals().await.unwrap();
+
+        assert_eq!(totals.total_supply_usd, BigDecimal::from(0));
+        assert_eq!(totals.total_borrow_usd, BigDecimal::from(0));
+        assert_eq!(totals.total_collateral_usd, BigDecimal::from(0));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn test_get_30d_avg_apy_tvl_weighted_basic() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+
+        let repo = LendingRepository::new(pool.clone());
+        let now = Utc::now().naive_utc();
+        let recent = now - Duration::days(1);
+
+        // market_a: TVL = 120 − 30 + 10 = 100, avg supply_rate = 0.10
+        // market_b: TVL = 400 − 150 + 50 = 300, avg supply_rate = 0.02
+        // Weighted avg = (100*0.10 + 300*0.02) / 400 = (10 + 6) / 400 = 0.04
+        repo.insert_position_snapshots(&[
+            make_snapshot_full("alice", "market_a", "120.0", "30.0", "10.0", recent),
+            make_snapshot_full("bob", "market_b", "400.0", "150.0", "50.0", recent),
+        ])
+        .await
+        .unwrap();
+        repo.insert_market_apy_snapshots(&[
+            make_apy_snapshot("market_a", "0.10", "0.10", recent),
+            make_apy_snapshot("market_b", "0.02", "0.02", recent),
+        ])
+        .await
+        .unwrap();
+
+        let apy = repo.get_30d_avg_apy_tvl_weighted().await.unwrap().with_scale(4);
+        assert_eq!(apy, BigDecimal::from_str("0.0400").unwrap());
+
+        cleanup_all_stats_tables(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn test_get_30d_avg_apy_tvl_weighted_ignores_old_readings() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+
+        let repo = LendingRepository::new(pool.clone());
+        let now = Utc::now().naive_utc();
+        let recent = now - Duration::days(1);
+        let ancient = now - Duration::days(40);
+
+        // One market with TVL = 200. Insert an old outlier rate (0.99) and a recent rate (0.10).
+        // The 30d-filter must drop the ancient row, leaving avg = 0.10.
+        repo.insert_position_snapshots(&[make_snapshot_full("alice", "market_a", "200.0", "0.0", "0.0", recent)])
+            .await
+            .unwrap();
+        repo.insert_market_apy_snapshots(&[
+            make_apy_snapshot("market_a", "0.99", "0.99", ancient),
+            make_apy_snapshot("market_a", "0.10", "0.10", recent),
+        ])
+        .await
+        .unwrap();
+
+        let apy = repo.get_30d_avg_apy_tvl_weighted().await.unwrap().with_scale(4);
+        assert_eq!(apy, BigDecimal::from_str("0.1000").unwrap());
+
+        cleanup_all_stats_tables(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn test_get_30d_avg_apy_tvl_weighted_zero_tvl() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+
+        let repo = LendingRepository::new(pool.clone());
+        let now = Utc::now().naive_utc();
+        let recent = now - Duration::days(1);
+
+        // Market has an APY reading but zero TVL (supply=borrow=collateral=0) → must return 0,
+        // never attempt the divide-by-zero.
+        repo.insert_position_snapshots(&[make_snapshot_full("alice", "market_a", "0.0", "0.0", "0.0", recent)])
+            .await
+            .unwrap();
+        repo.insert_market_apy_snapshots(&[make_apy_snapshot("market_a", "0.50", "0.50", recent)]).await.unwrap();
+
+        let apy = repo.get_30d_avg_apy_tvl_weighted().await.unwrap();
+        assert_eq!(apy, BigDecimal::from(0));
+
+        cleanup_all_stats_tables(&pool).await;
     }
 }

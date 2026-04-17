@@ -84,6 +84,8 @@ diesel::table! {
         timestamp -> Timestamp,
         borrow_amount -> Numeric,
         borrow_amount_usd -> Numeric,
+        collateral_amount -> Numeric,
+        collateral_amount_usd -> Numeric,
     }
 }
 
@@ -122,6 +124,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    market_apy_snapshots (id) {
+        id -> Int4,
+        market_id -> Text,
+        borrow_rate -> Numeric,
+        supply_rate -> Numeric,
+        snapshot_timestamp -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     market_state_snapshots (id) {
         id -> Int4,
         market_id -> Text,
@@ -129,7 +142,6 @@ diesel::table! {
         total_supply_shares -> Numeric,
         total_borrow_assets -> Numeric,
         total_borrow_shares -> Numeric,
-        interest_rate -> Nullable<Numeric>,
         snapshot_timestamp -> Timestamp,
         created_at -> Timestamp,
     }
@@ -255,6 +267,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     linx_transactions,
     loan_actions,
     loan_details,
+    market_apy_snapshots,
     market_state_snapshots,
     points_config,
     points_multipliers,
