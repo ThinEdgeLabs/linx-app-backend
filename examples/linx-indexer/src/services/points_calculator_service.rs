@@ -360,7 +360,7 @@ where
         // Process each user's snapshots
         for (address, mut snapshots) in user_snapshots {
             // Sort snapshots by timestamp (critical for time-weighted calculation)
-            snapshots.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            snapshots.sort_by_key(|a| a.timestamp);
             if snapshots.is_empty() {
                 continue;
             }

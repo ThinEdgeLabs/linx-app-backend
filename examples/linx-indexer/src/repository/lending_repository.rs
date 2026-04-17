@@ -391,7 +391,7 @@ impl LendingRepository {
             }
         }
 
-        positions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        positions.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
 
         Ok(positions)
     }
