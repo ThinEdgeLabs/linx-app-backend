@@ -156,7 +156,13 @@ diesel::table! {
         total_borrow_assets -> Numeric,
         total_borrow_shares -> Numeric,
         snapshot_timestamp -> Timestamp,
-        created_at -> Timestamp,
+        total_collateral_assets -> Numeric,
+        total_supply_usd -> Numeric,
+        total_borrow_usd -> Numeric,
+        total_collateral_usd -> Numeric,
+        borrow_apy -> Numeric,
+        cumulative_supply_volume_usd -> Numeric,
+        cumulative_borrow_volume_usd -> Numeric,
     }
 }
 

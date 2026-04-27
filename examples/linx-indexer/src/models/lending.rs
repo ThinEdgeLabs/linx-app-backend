@@ -150,7 +150,19 @@ pub struct MarketStateSnapshot {
     #[schema(value_type = String)]
     pub snapshot_timestamp: NaiveDateTime,
     #[schema(value_type = String)]
-    pub created_at: NaiveDateTime,
+    pub total_collateral_assets: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_supply_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_borrow_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub total_collateral_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub borrow_apy: BigDecimal,
+    #[schema(value_type = String)]
+    pub cumulative_supply_volume_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub cumulative_borrow_volume_usd: BigDecimal,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -163,6 +175,13 @@ pub struct NewMarketStateSnapshot {
     pub total_borrow_assets: BigDecimal,
     pub total_borrow_shares: BigDecimal,
     pub snapshot_timestamp: NaiveDateTime,
+    pub total_collateral_assets: BigDecimal,
+    pub total_supply_usd: BigDecimal,
+    pub total_borrow_usd: BigDecimal,
+    pub total_collateral_usd: BigDecimal,
+    pub borrow_apy: BigDecimal,
+    pub cumulative_supply_volume_usd: BigDecimal,
+    pub cumulative_borrow_volume_usd: BigDecimal,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
