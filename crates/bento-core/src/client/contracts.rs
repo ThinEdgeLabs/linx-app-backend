@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_trait::stage::ContractsProvider;
-use bento_types::{CallContractParams, CallContractResult};
+use bento_types::{CallContractParams, CallContractResult, ContractState};
 use url::Url;
 
 use super::Client;
@@ -21,6 +21,21 @@ impl ContractsProvider for Client {
             anyhow::bail!("call_contract HTTP {}: {}", status, body);
         }
         let result: CallContractResult = serde_json::from_str(&body)?;
+        Ok(result)
+    }
+}
+
+impl Client {
+    pub async fn get_contract_state(&self, address: &str) -> Result<ContractState> {
+        let url = Url::parse(&format!("{}/contracts/{}/state", self.base_url, address))?;
+        let response = self.inner.get(url).send().await?;
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            tracing::error!("get_contract_state failed (HTTP {}): {}", status, body);
+            anyhow::bail!("get_contract_state HTTP {}: {}", status, body);
+        }
+        let result: ContractState = serde_json::from_str(&body)?;
         Ok(result)
     }
 }

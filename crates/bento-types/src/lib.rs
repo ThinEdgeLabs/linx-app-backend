@@ -336,6 +336,27 @@ pub struct CallContractResult {
     pub debug_messages: Option<Vec<String>>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractState {
+    pub address: String,
+    pub asset: ContractAsset,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractAsset {
+    pub atto_alph_amount: String,
+    #[serde(default)]
+    pub tokens: Vec<ContractToken>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ContractToken {
+    pub id: String,
+    pub amount: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
