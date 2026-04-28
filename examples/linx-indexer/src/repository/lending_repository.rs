@@ -12,8 +12,8 @@ use mockall::automock;
 use crate::{
     models::{
         Apy30d, LendingEvent, LendingStatsSnapshot, Market, MarketStateSnapshot, NewLendingEvent,
-        NewLendingStatsSnapshot, NewMarketApySnapshot, NewMarketStateSnapshot, NewPositionSnapshot, Position,
-        PositionSnapshot, PositionTotals, Timeframe, UserPositionHistoryPoint,
+        NewLendingStatsSnapshot, NewMarketStateSnapshot, NewPositionSnapshot, Position, PositionSnapshot,
+        PositionTotals, Timeframe, UserPositionHistoryPoint,
     },
     schema::{self},
 };
@@ -466,23 +466,6 @@ impl LendingRepository {
         Ok(events)
     }
 
-    pub async fn insert_market_apy_snapshots(&self, snapshots: &[NewMarketApySnapshot]) -> Result<()> {
-        if snapshots.is_empty() {
-            return Ok(());
-        }
-
-        let mut conn = self.db_pool.get().await?;
-
-        diesel::insert_into(schema::market_apy_snapshots::table)
-            .values(snapshots)
-            .on_conflict((schema::market_apy_snapshots::market_id, schema::market_apy_snapshots::snapshot_timestamp))
-            .do_nothing()
-            .execute(&mut conn)
-            .await?;
-
-        Ok(())
-    }
-
     /// SUM of the latest per-market USD totals across all markets. Reads from
     /// `market_state_snapshots` (one row per market per tick) — orders of magnitude
     /// fewer rows than aggregating per-user position snapshots.
@@ -631,7 +614,6 @@ mod tests {
     async fn cleanup_all_stats_tables(pool: &Arc<Pool<AsyncPgConnection>>) {
         let mut conn = pool.get().await.unwrap();
         diesel::sql_query("DELETE FROM lending_position_snapshots").execute(&mut conn).await.unwrap();
-        diesel::sql_query("DELETE FROM market_apy_snapshots").execute(&mut conn).await.unwrap();
     }
 
     fn make_snapshot(

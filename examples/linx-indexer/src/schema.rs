@@ -11,7 +11,7 @@ diesel::table! {
         block_height -> Int8,
         timestamp -> Timestamp,
         details -> Jsonb,
-        tx_key -> Text,
+        tx_key -> Nullable<Text>,
     }
 }
 
@@ -133,17 +133,6 @@ diesel::table! {
         interest_rate -> Numeric,
         duration -> Numeric,
         lender -> Varchar,
-    }
-}
-
-diesel::table! {
-    market_apy_snapshots (id) {
-        id -> Int4,
-        market_id -> Text,
-        borrow_rate -> Numeric,
-        supply_rate -> Numeric,
-        snapshot_timestamp -> Timestamp,
-        created_at -> Timestamp,
     }
 }
 
@@ -288,7 +277,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     linx_transactions,
     loan_actions,
     loan_details,
-    market_apy_snapshots,
     market_state_snapshots,
     points_config,
     points_multipliers,

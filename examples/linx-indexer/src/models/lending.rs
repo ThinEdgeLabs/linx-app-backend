@@ -219,32 +219,6 @@ impl Timeframe {
 }
 
 #[derive(Queryable, Debug, Clone, Serialize, ToSchema)]
-#[diesel(table_name = schema::market_apy_snapshots)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct MarketApySnapshot {
-    pub id: i32,
-    pub market_id: String,
-    #[schema(value_type = String)]
-    pub borrow_rate: BigDecimal,
-    #[schema(value_type = String)]
-    pub supply_rate: BigDecimal,
-    #[schema(value_type = String)]
-    pub snapshot_timestamp: NaiveDateTime,
-    #[schema(value_type = String)]
-    pub created_at: NaiveDateTime,
-}
-
-#[derive(Insertable, Debug, Clone)]
-#[diesel(table_name = schema::market_apy_snapshots)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
-pub struct NewMarketApySnapshot {
-    pub market_id: String,
-    pub borrow_rate: BigDecimal,
-    pub supply_rate: BigDecimal,
-    pub snapshot_timestamp: NaiveDateTime,
-}
-
-#[derive(Queryable, Debug, Clone, Serialize, ToSchema)]
 #[diesel(table_name = schema::lending_stats_snapshots)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct LendingStatsSnapshot {

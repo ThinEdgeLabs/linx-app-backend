@@ -23,7 +23,7 @@ pub struct AccountTransaction {
     #[schema(value_type = String)]
     pub timestamp: NaiveDateTime,
     pub details: JsonValue,
-    pub tx_key: String,
+    pub tx_key: Option<String>,
 }
 
 /// Flattened response DTO for account transactions
