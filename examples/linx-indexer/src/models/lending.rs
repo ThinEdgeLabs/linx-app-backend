@@ -160,6 +160,8 @@ pub struct MarketStateSnapshot {
     #[schema(value_type = String)]
     pub borrow_apy: BigDecimal,
     #[schema(value_type = String)]
+    pub fee: BigDecimal,
+    #[schema(value_type = String)]
     pub cumulative_supply_volume_usd: BigDecimal,
     #[schema(value_type = String)]
     pub cumulative_borrow_volume_usd: BigDecimal,
@@ -180,6 +182,7 @@ pub struct NewMarketStateSnapshot {
     pub total_borrow_usd: BigDecimal,
     pub total_collateral_usd: BigDecimal,
     pub borrow_apy: BigDecimal,
+    pub fee: BigDecimal,
     pub cumulative_supply_volume_usd: BigDecimal,
     pub cumulative_borrow_volume_usd: BigDecimal,
 }

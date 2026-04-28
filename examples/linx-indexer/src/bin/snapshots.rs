@@ -5,9 +5,7 @@ use bento_core::new_db_pool;
 use linx_indexer::config::AppConfig;
 use linx_indexer::jobs::{PeriodicJob, run_job_forever};
 use linx_indexer::services::price::token_service::TokenService;
-use linx_indexer::services::{
-    MarketApyService, MarketStateSnapshotService, PositionSnapshotService, StatsSnapshotService,
-};
+use linx_indexer::services::{MarketStateSnapshotService, PositionSnapshotService, StatsSnapshotService};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -52,31 +50,26 @@ fn build_jobs(
     network: bento_types::network::Network,
     app_config: &AppConfig,
 ) -> Vec<Arc<dyn PeriodicJob>> {
-    let token_service = TokenService::new(
+    let token_service = Arc::new(TokenService::new(
         network.clone(),
         app_config.linx_api_url.clone(),
         app_config.dia_oracle_address.clone(),
         app_config.linx_group,
-    );
+    ));
     let client = bento_core::Client::new(network.clone());
 
     vec![
         Arc::new(PositionSnapshotService::new(
             db_pool.clone(),
             client,
-            token_service,
+            token_service.clone(),
             app_config.linx_address.clone(),
             app_config.linx_group,
         )),
         Arc::new(MarketStateSnapshotService::new(
             db_pool.clone(),
-            network.clone(),
-            app_config.linx_address.clone(),
-            app_config.linx_group,
-        )),
-        Arc::new(MarketApyService::new(
-            db_pool.clone(),
             network,
+            token_service,
             app_config.linx_address.clone(),
             app_config.linx_group,
         )),

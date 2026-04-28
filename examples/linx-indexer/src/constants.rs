@@ -3,6 +3,10 @@ pub const VIRTUAL_SHARES: u64 = 1000000;
 pub const ALPH_TOKEN_ID: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 pub const DUST_AMOUNT: &str = "1000000000000000"; // 0.001 ALPH
 
+pub const SECONDS_PER_YEAR: u64 = 31_536_000;
+/// WAD = 1e18
+pub const WAD: &str = "1000000000000000000";
+
 // Stablecoin token IDs for price calculation
 pub const USDT_TOKEN_IDS: &[&str] = &[
     "556d9582463fe44fbd108aedc9f409f69086dc78d994b88ea6c9e65f8bf98e00", // USDTeth Mainnet

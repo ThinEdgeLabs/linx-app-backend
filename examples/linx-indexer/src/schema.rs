@@ -161,6 +161,7 @@ diesel::table! {
         total_borrow_usd -> Numeric,
         total_collateral_usd -> Numeric,
         borrow_apy -> Numeric,
+        fee -> Numeric,
         cumulative_supply_volume_usd -> Numeric,
         cumulative_borrow_volume_usd -> Numeric,
     }

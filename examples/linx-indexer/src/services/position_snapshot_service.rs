@@ -15,7 +15,7 @@ use std::time::Duration;
 pub struct PositionSnapshotService {
     lending_repository: LendingRepository,
     client: Client,
-    token_service: TokenService,
+    token_service: Arc<TokenService>,
     linx_address: String,
     linx_group: u32,
 }
@@ -24,7 +24,7 @@ impl PositionSnapshotService {
     pub fn new(
         db_pool: Arc<DbPool>,
         client: Client,
-        token_service: TokenService,
+        token_service: Arc<TokenService>,
         linx_address: String,
         linx_group: u32,
     ) -> Self {
