@@ -110,6 +110,9 @@ impl MarketStateSnapshotService {
         let delta_supply_usd = loan_info.convert_to_decimal(&delta_supply_amount) * &loan_price;
         let delta_borrow_usd = loan_info.convert_to_decimal(&delta_borrow_amount) * &loan_price;
 
+        let bad_debt_assets = self.lending_repository.sum_bad_debt_assets(&market.id).await?;
+        let bad_debt_usd = loan_info.convert_to_decimal(&bad_debt_assets) * &loan_price;
+
         Ok(NewMarketStateSnapshot {
             market_id: market.id.clone(),
             total_supply_assets: state.total_supply_assets,
@@ -125,6 +128,7 @@ impl MarketStateSnapshotService {
             fee: state.fee.clone(),
             cumulative_supply_volume_usd: (prev_cum_supply + delta_supply_usd).with_scale(2),
             cumulative_borrow_volume_usd: (prev_cum_borrow + delta_borrow_usd).with_scale(2),
+            bad_debt_usd: bad_debt_usd.with_scale(2),
         })
     }
 

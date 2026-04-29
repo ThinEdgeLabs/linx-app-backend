@@ -400,7 +400,7 @@ fn build_market_item(snap: &MarketStateSnapshot, meta: &Market) -> MarketStatsIt
         liquidity,
         supply_apr: supply_apy.with_scale(3),
         borrow_apr: snap.borrow_apy.clone(),
-        bad_debt: BigDecimal::zero(),
+        bad_debt: snap.bad_debt_usd.clone(),
         risk: build_risk(meta),
     }
 }
@@ -411,6 +411,7 @@ fn build_aggregate(snapshots: &[MarketStateSnapshot]) -> AggregateStatsItem {
     let mut total_borrow = BigDecimal::zero();
     let mut total_collateral = BigDecimal::zero();
     let mut total_tvl = BigDecimal::zero();
+    let mut total_bad_debt = BigDecimal::zero();
     let mut weighted_util = BigDecimal::zero();
     let mut weighted_sup = BigDecimal::zero();
     let mut weighted_bor = BigDecimal::zero();
@@ -424,6 +425,7 @@ fn build_aggregate(snapshots: &[MarketStateSnapshot]) -> AggregateStatsItem {
         total_supply += &snap.total_supply_usd;
         total_borrow += &snap.total_borrow_usd;
         total_collateral += &snap.total_collateral_usd;
+        total_bad_debt += &snap.bad_debt_usd;
         weighted_util += &util * &tvl;
         weighted_sup += &supply_apy * &tvl;
         weighted_bor += &snap.borrow_apy * &tvl;
@@ -447,7 +449,7 @@ fn build_aggregate(snapshots: &[MarketStateSnapshot]) -> AggregateStatsItem {
         liquidity,
         supply_apr: sup_apr.with_scale(3),
         borrow_apr: bor_apr.with_scale(3),
-        bad_debt: BigDecimal::zero(),
+        bad_debt: total_bad_debt.with_scale(2),
     }
 }
 
@@ -549,6 +551,8 @@ pub struct SeriesResponse {
     pub cumulative_supply_volume_usd: Vec<BigDecimal>,
     #[schema(value_type = Vec<String>)]
     pub cumulative_borrow_volume_usd: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub bad_debt_usd: Vec<BigDecimal>,
 }
 
 #[utoipa::path(
@@ -596,6 +600,7 @@ fn single_market_series(mut points: Vec<MarketStatePoint>) -> SeriesResponse {
         borrow_apr: Vec::with_capacity(n),
         cumulative_supply_volume_usd: Vec::with_capacity(n),
         cumulative_borrow_volume_usd: Vec::with_capacity(n),
+        bad_debt_usd: Vec::with_capacity(n),
     };
 
     for p in &points {
@@ -611,6 +616,7 @@ fn single_market_series(mut points: Vec<MarketStatePoint>) -> SeriesResponse {
         response.borrow_apr.push(p.borrow_apy.clone());
         response.cumulative_supply_volume_usd.push(p.cumulative_supply_volume_usd.clone());
         response.cumulative_borrow_volume_usd.push(p.cumulative_borrow_volume_usd.clone());
+        response.bad_debt_usd.push(p.bad_debt_usd.clone());
     }
     response
 }
@@ -635,6 +641,7 @@ fn aggregate_series(points: Vec<MarketStatePoint>) -> SeriesResponse {
         borrow_apr: Vec::with_capacity(n),
         cumulative_supply_volume_usd: Vec::with_capacity(n),
         cumulative_borrow_volume_usd: Vec::with_capacity(n),
+        bad_debt_usd: Vec::with_capacity(n),
     };
 
     for (bucket_ts, bucket_points) in by_bucket {
@@ -647,6 +654,7 @@ fn aggregate_series(points: Vec<MarketStatePoint>) -> SeriesResponse {
         let mut weighted_bor = BigDecimal::zero();
         let mut cum_supply = BigDecimal::zero();
         let mut cum_borrow = BigDecimal::zero();
+        let mut bad_debt = BigDecimal::zero();
 
         for p in &bucket_points {
             let tvl = &p.total_supply_usd + &p.total_collateral_usd;
@@ -662,6 +670,7 @@ fn aggregate_series(points: Vec<MarketStatePoint>) -> SeriesResponse {
             total_tvl += tvl;
             cum_supply += &p.cumulative_supply_volume_usd;
             cum_borrow += &p.cumulative_borrow_volume_usd;
+            bad_debt += &p.bad_debt_usd;
         }
 
         let (util, sup_apr, bor_apr) = if total_tvl.is_zero() {
@@ -679,6 +688,7 @@ fn aggregate_series(points: Vec<MarketStatePoint>) -> SeriesResponse {
         response.borrow_apr.push(bor_apr.with_scale(3));
         response.cumulative_supply_volume_usd.push(cum_supply.with_scale(2));
         response.cumulative_borrow_volume_usd.push(cum_borrow.with_scale(2));
+        response.bad_debt_usd.push(bad_debt.with_scale(2));
     }
     response
 }

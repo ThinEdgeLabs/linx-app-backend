@@ -165,6 +165,8 @@ pub struct MarketStateSnapshot {
     pub cumulative_supply_volume_usd: BigDecimal,
     #[schema(value_type = String)]
     pub cumulative_borrow_volume_usd: BigDecimal,
+    #[schema(value_type = String)]
+    pub bad_debt_usd: BigDecimal,
 }
 
 #[derive(Insertable, Debug, Clone)]
@@ -185,6 +187,7 @@ pub struct NewMarketStateSnapshot {
     pub fee: BigDecimal,
     pub cumulative_supply_volume_usd: BigDecimal,
     pub cumulative_borrow_volume_usd: BigDecimal,
+    pub bad_debt_usd: BigDecimal,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
@@ -311,6 +314,8 @@ pub struct MarketStatePoint {
     pub cumulative_supply_volume_usd: BigDecimal,
     #[diesel(sql_type = Numeric)]
     pub cumulative_borrow_volume_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub bad_debt_usd: BigDecimal,
 }
 
 #[derive(QueryableByName, Debug, Clone, Serialize, ToSchema)]

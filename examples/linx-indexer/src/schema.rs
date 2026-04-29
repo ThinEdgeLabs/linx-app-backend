@@ -153,6 +153,7 @@ diesel::table! {
         fee -> Numeric,
         cumulative_supply_volume_usd -> Numeric,
         cumulative_borrow_volume_usd -> Numeric,
+        bad_debt_usd -> Numeric,
     }
 }
 

@@ -234,7 +234,8 @@ impl LendingRepository {
                     total_supply_usd, total_borrow_usd, total_collateral_usd, \
                     total_supply_assets, total_borrow_assets, \
                     borrow_apy, fee, \
-                    cumulative_supply_volume_usd, cumulative_borrow_volume_usd \
+                    cumulative_supply_volume_usd, cumulative_borrow_volume_usd, \
+                    bad_debt_usd \
              FROM market_state_snapshots \
              WHERE snapshot_timestamp >= NOW() - make_interval(secs => $1)",
             bucket.date_trunc_kind(),
@@ -258,6 +259,27 @@ impl LendingRepository {
             }
         };
         Ok(rows)
+    }
+
+    /// Total realized bad debt (raw loan-token assets) for a market, summed across
+    /// every Liquidate event. The `badDebtAssets` value lives at field index 6 of the
+    /// Liquidate event payload, which the processor stores in the `fields` jsonb column.
+    pub async fn sum_bad_debt_assets(&self, market_id_value: &str) -> Result<BigDecimal> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Numeric)]
+            total: BigDecimal,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row = diesel::sql_query(
+            "SELECT COALESCE(SUM((fields->6->>'value')::numeric), 0) AS total \
+             FROM lending_events \
+             WHERE event_type = 'Liquidate' AND market_id = $1",
+        )
+        .bind::<diesel::sql_types::Text, _>(market_id_value)
+        .get_result(&mut conn)
+        .await?;
+        Ok(row.total)
     }
 
     /// SUM(amount) of lending events of a given type for a market within a half-open
@@ -294,19 +316,19 @@ impl LendingRepository {
         let bucket_interval = timeframe.bucket_interval();
 
         let results = if let Some(market_id) = market_id {
-            // Use DISTINCT ON to pick the last snapshot per bucket (closest to bucket end)
+            // Pick the last snapshot per bucket.
             diesel::sql_query(format!(
-                "SELECT timestamp, supply_amount_usd, borrow_amount_usd \
+                "SELECT bucket_ts as timestamp, supply_amount_usd, borrow_amount_usd \
                  FROM ( \
                      SELECT DISTINCT ON (date_trunc('{0}', timestamp)) \
-                            date_trunc('{0}', timestamp) as timestamp, \
+                            date_trunc('{0}', timestamp) as bucket_ts, \
                             supply_amount_usd, \
                             borrow_amount_usd \
                      FROM lending_position_snapshots \
                      WHERE address = $1 AND market_id = $2 AND timestamp >= $3 \
                      ORDER BY date_trunc('{0}', timestamp), timestamp DESC \
                  ) sub \
-                 ORDER BY timestamp ASC",
+                 ORDER BY bucket_ts ASC",
                 bucket_interval
             ))
             .bind::<diesel::sql_types::Text, _>(address)
@@ -315,14 +337,14 @@ impl LendingRepository {
             .load::<UserPositionHistoryPoint>(&mut conn)
             .await?
         } else {
-            // For all markets: pick last snapshot per (bucket, market), then SUM across markets
+            // For all markets: pick last snapshot per (bucket, market), then SUM across markets.
             diesel::sql_query(format!(
-                "SELECT ts as timestamp, \
+                "SELECT bucket_ts as timestamp, \
                         SUM(supply_amount_usd) as supply_amount_usd, \
                         SUM(borrow_amount_usd) as borrow_amount_usd \
                  FROM ( \
                      SELECT DISTINCT ON (date_trunc('{0}', timestamp), market_id) \
-                            date_trunc('{0}', timestamp) as ts, \
+                            date_trunc('{0}', timestamp) as bucket_ts, \
                             market_id, \
                             supply_amount_usd, \
                             borrow_amount_usd \
@@ -330,8 +352,8 @@ impl LendingRepository {
                      WHERE address = $1 AND timestamp >= $2 \
                      ORDER BY date_trunc('{0}', timestamp), market_id, timestamp DESC \
                  ) sub \
-                 GROUP BY ts \
-                 ORDER BY ts ASC",
+                 GROUP BY bucket_ts \
+                 ORDER BY bucket_ts ASC",
                 bucket_interval
             ))
             .bind::<diesel::sql_types::Text, _>(address)
@@ -657,6 +679,7 @@ mod tests {
     async fn cleanup_all_stats_tables(pool: &Arc<Pool<AsyncPgConnection>>) {
         let mut conn = pool.get().await.unwrap();
         diesel::sql_query("DELETE FROM lending_position_snapshots").execute(&mut conn).await.unwrap();
+        diesel::sql_query("DELETE FROM market_state_snapshots").execute(&mut conn).await.unwrap();
     }
 
     fn make_snapshot(
