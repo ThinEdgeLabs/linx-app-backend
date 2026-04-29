@@ -11,9 +11,9 @@ use mockall::automock;
 
 use crate::{
     models::{
-        Apy30d, LendingEvent, LendingStatsSnapshot, Market, MarketStateSnapshot, NewLendingEvent,
+        Apy30d, LendingEvent, LendingStatsSnapshot, Market, MarketStatePoint, MarketStateSnapshot, NewLendingEvent,
         NewLendingStatsSnapshot, NewMarketStateSnapshot, NewPositionSnapshot, Position, PositionSnapshot,
-        PositionTotals, Timeframe, UserPositionHistoryPoint,
+        PositionTotals, SeriesBucket, Timeframe, UserPositionHistoryPoint,
     },
     schema::{self},
 };
@@ -214,6 +214,49 @@ impl LendingRepository {
             .order((market_id, snapshot_timestamp.desc()))
             .load(&mut conn)
             .await?;
+        Ok(rows)
+    }
+
+    /// Last snapshot per (market, time bucket) within a rolling window.
+    /// `window_seconds` defines the lookback (`NOW() - window_seconds`).
+    /// `market_id_filter = None` returns rows for every market.
+    pub async fn get_market_state_points(
+        &self,
+        market_id_filter: Option<&str>,
+        bucket: SeriesBucket,
+        window_seconds: i64,
+    ) -> Result<Vec<MarketStatePoint>> {
+        let mut conn = self.db_pool.get().await?;
+        let mut sql = format!(
+            "SELECT DISTINCT ON (market_id, bucket_ts) \
+                    market_id, \
+                    date_trunc('{}', snapshot_timestamp) AS bucket_ts, \
+                    total_supply_usd, total_borrow_usd, total_collateral_usd, \
+                    total_supply_assets, total_borrow_assets, \
+                    borrow_apy, fee, \
+                    cumulative_supply_volume_usd, cumulative_borrow_volume_usd \
+             FROM market_state_snapshots \
+             WHERE snapshot_timestamp >= NOW() - make_interval(secs => $1)",
+            bucket.date_trunc_kind(),
+        );
+
+        let rows = match market_id_filter {
+            Some(market_id_value) => {
+                sql.push_str(" AND market_id = $2 ORDER BY market_id, bucket_ts, snapshot_timestamp DESC");
+                diesel::sql_query(sql)
+                    .bind::<diesel::sql_types::BigInt, _>(window_seconds)
+                    .bind::<diesel::sql_types::Text, _>(market_id_value)
+                    .load::<MarketStatePoint>(&mut conn)
+                    .await?
+            }
+            None => {
+                sql.push_str(" ORDER BY market_id, bucket_ts, snapshot_timestamp DESC");
+                diesel::sql_query(sql)
+                    .bind::<diesel::sql_types::BigInt, _>(window_seconds)
+                    .load::<MarketStatePoint>(&mut conn)
+                    .await?
+            }
+        };
         Ok(rows)
     }
 

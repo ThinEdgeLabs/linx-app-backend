@@ -127,3 +127,11 @@ impl From<RepositoryError> for AppError {
         }
     }
 }
+
+/// Lets handlers use `WithRejection<Query<T>, AppError>` from `axum-extra` so query
+/// deserialization failures get the standard JSON error body instead of axum's plain text.
+impl From<axum::extract::rejection::QueryRejection> for AppError {
+    fn from(rejection: axum::extract::rejection::QueryRejection) -> Self {
+        AppError::BadRequest(rejection.body_text())
+    }
+}

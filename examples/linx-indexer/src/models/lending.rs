@@ -270,6 +270,49 @@ pub struct Apy30d {
     pub apy_30d_avg: BigDecimal,
 }
 
+/// Time-bucket granularity for the stats series endpoint.
+#[derive(Debug, Clone, Copy)]
+pub enum SeriesBucket {
+    Hour,
+    Day,
+}
+
+impl SeriesBucket {
+    /// Precision string accepted by PostgreSQL's `date_trunc(text, timestamp)`.
+    pub fn date_trunc_kind(&self) -> &'static str {
+        match self {
+            SeriesBucket::Hour => "hour",
+            SeriesBucket::Day => "day",
+        }
+    }
+}
+
+#[derive(QueryableByName, Debug, Clone)]
+pub struct MarketStatePoint {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub market_id: String,
+    #[diesel(sql_type = Timestamp)]
+    pub bucket_ts: NaiveDateTime,
+    #[diesel(sql_type = Numeric)]
+    pub total_supply_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub total_borrow_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub total_collateral_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub total_supply_assets: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub total_borrow_assets: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub borrow_apy: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub fee: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub cumulative_supply_volume_usd: BigDecimal,
+    #[diesel(sql_type = Numeric)]
+    pub cumulative_borrow_volume_usd: BigDecimal,
+}
+
 #[derive(QueryableByName, Debug, Clone, Serialize, ToSchema)]
 pub struct UserPositionHistoryPoint {
     #[diesel(sql_type = Timestamp)]

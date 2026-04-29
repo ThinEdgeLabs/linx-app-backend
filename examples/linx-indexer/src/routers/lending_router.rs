@@ -12,9 +12,14 @@ use std::str::FromStr;
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
+use axum_extra::extract::WithRejection;
+
 use crate::{
     constants::WAD,
-    models::{LendingEvent, Market, MarketStateSnapshot, Position, Timeframe, UserPositionHistoryPoint},
+    models::{
+        LendingEvent, Market, MarketStatePoint, MarketStateSnapshot, Position, SeriesBucket, Timeframe,
+        UserPositionHistoryPoint,
+    },
     repository::LendingRepository,
     services::market_state_snapshot_service::derive_supply_apy,
 };
@@ -30,6 +35,7 @@ impl LendingRouter {
             .route("/lending/v1/positions", get(get_positions))
             .route("/lending/v1/history/user-positions", get(get_user_position_history))
             .route("/lending/v1/stats", get(get_lending_stats))
+            .route("/lending/v1/stats/series", get(get_lending_stats_series))
     }
 }
 
@@ -481,4 +487,198 @@ fn liquidation_bonus_fraction(ltv_wad: &BigDecimal) -> BigDecimal {
     let lif_uncapped = if denom.is_zero() { max_lif.clone() } else { &one / denom };
     let lif = if lif_uncapped > max_lif { max_lif } else { lif_uncapped };
     lif - one
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, ToSchema)]
+pub enum Range {
+    #[serde(rename = "24H")]
+    Last24H,
+    #[serde(rename = "7D")]
+    Last7D,
+    #[serde(rename = "30D")]
+    Last30D,
+    #[serde(rename = "90D")]
+    Last90D,
+}
+
+impl Range {
+    fn bucket(self) -> SeriesBucket {
+        match self {
+            Range::Last24H => SeriesBucket::Hour,
+            Range::Last7D | Range::Last30D | Range::Last90D => SeriesBucket::Day,
+        }
+    }
+
+    fn window_seconds(self) -> i64 {
+        match self {
+            Range::Last24H => 24 * 3600,
+            Range::Last7D => 7 * 24 * 3600,
+            Range::Last30D => 30 * 24 * 3600,
+            Range::Last90D => 90 * 24 * 3600,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct SeriesQuery {
+    /// Market id to filter by, or `"all"` / omitted for the protocol-wide aggregate.
+    pub market: Option<String>,
+    /// Time window for the series.
+    pub range: Range,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SeriesResponse {
+    /// Bucket-start timestamps in unix milliseconds, ascending.
+    pub timestamps: Vec<i64>,
+    #[schema(value_type = Vec<String>)]
+    pub tvl_usd: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub supply_usd: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub borrow_usd: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub utilization: Vec<BigDecimal>,
+    #[serde(rename = "supplyAPR")]
+    #[schema(value_type = Vec<String>)]
+    pub supply_apr: Vec<BigDecimal>,
+    #[serde(rename = "borrowAPR")]
+    #[schema(value_type = Vec<String>)]
+    pub borrow_apr: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub cumulative_supply_volume_usd: Vec<BigDecimal>,
+    #[schema(value_type = Vec<String>)]
+    pub cumulative_borrow_volume_usd: Vec<BigDecimal>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/lending/v1/stats/series",
+    tag = "Stats",
+    summary = "Get lending stats time-series",
+    description = "Returns a time-series of stats for one market or the protocol-wide aggregate. \
+        `market=<id>` selects a single market; `market=all` (or omitted) returns the aggregate. \
+        `range` chooses the time window and bucket size: `24H` uses hourly buckets, \
+        `7D` / `30D` / `90D` use daily buckets. Each bucket holds the LAST snapshot value \
+        within that bucket. Aggregate `utilization`, `supplyAPR`, `borrowAPR` are TVL-weighted \
+        across markets per bucket.",
+    params(SeriesQuery),
+    responses(
+        (status = 200, description = "Time-series", body = SeriesResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_lending_stats_series(
+    WithRejection(Query(query), _): WithRejection<Query<SeriesQuery>, AppError>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    let lending_repo = LendingRepository::new(state.db.clone());
+    let market_filter = query.market.as_deref().filter(|s| !s.is_empty() && *s != "all");
+    let points =
+        lending_repo.get_market_state_points(market_filter, query.range.bucket(), query.range.window_seconds()).await?;
+
+    let response = if market_filter.is_some() { single_market_series(points) } else { aggregate_series(points) };
+    Ok(Json(response))
+}
+
+/// Single market: each `MarketStatePoint` becomes one bucket in the response. Sort ascending.
+fn single_market_series(mut points: Vec<MarketStatePoint>) -> SeriesResponse {
+    points.sort_by_key(|p| p.bucket_ts);
+
+    let n = points.len();
+    let mut response = SeriesResponse {
+        timestamps: Vec::with_capacity(n),
+        tvl_usd: Vec::with_capacity(n),
+        supply_usd: Vec::with_capacity(n),
+        borrow_usd: Vec::with_capacity(n),
+        utilization: Vec::with_capacity(n),
+        supply_apr: Vec::with_capacity(n),
+        borrow_apr: Vec::with_capacity(n),
+        cumulative_supply_volume_usd: Vec::with_capacity(n),
+        cumulative_borrow_volume_usd: Vec::with_capacity(n),
+    };
+
+    for p in &points {
+        let util = utilization(&p.total_supply_assets, &p.total_borrow_assets);
+        let supply_apy = derive_supply_apy(&p.borrow_apy, &p.total_supply_assets, &p.total_borrow_assets, &p.fee);
+
+        response.timestamps.push(p.bucket_ts.and_utc().timestamp_millis());
+        response.tvl_usd.push((&p.total_supply_usd + &p.total_collateral_usd).with_scale(2));
+        response.supply_usd.push(p.total_supply_usd.clone());
+        response.borrow_usd.push(p.total_borrow_usd.clone());
+        response.utilization.push(util.with_scale(3));
+        response.supply_apr.push(supply_apy.with_scale(3));
+        response.borrow_apr.push(p.borrow_apy.clone());
+        response.cumulative_supply_volume_usd.push(p.cumulative_supply_volume_usd.clone());
+        response.cumulative_borrow_volume_usd.push(p.cumulative_borrow_volume_usd.clone());
+    }
+    response
+}
+
+/// Aggregate: group all markets' points by bucket_ts. Per bucket, sum USD values and
+/// TVL-weight rates / utilization across markets.
+fn aggregate_series(points: Vec<MarketStatePoint>) -> SeriesResponse {
+    let mut by_bucket: std::collections::BTreeMap<chrono::NaiveDateTime, Vec<MarketStatePoint>> =
+        std::collections::BTreeMap::new();
+    for p in points {
+        by_bucket.entry(p.bucket_ts).or_default().push(p);
+    }
+
+    let n = by_bucket.len();
+    let mut response = SeriesResponse {
+        timestamps: Vec::with_capacity(n),
+        tvl_usd: Vec::with_capacity(n),
+        supply_usd: Vec::with_capacity(n),
+        borrow_usd: Vec::with_capacity(n),
+        utilization: Vec::with_capacity(n),
+        supply_apr: Vec::with_capacity(n),
+        borrow_apr: Vec::with_capacity(n),
+        cumulative_supply_volume_usd: Vec::with_capacity(n),
+        cumulative_borrow_volume_usd: Vec::with_capacity(n),
+    };
+
+    for (bucket_ts, bucket_points) in by_bucket {
+        let mut total_supply = BigDecimal::zero();
+        let mut total_borrow = BigDecimal::zero();
+        let mut total_collateral = BigDecimal::zero();
+        let mut total_tvl = BigDecimal::zero();
+        let mut weighted_util = BigDecimal::zero();
+        let mut weighted_sup = BigDecimal::zero();
+        let mut weighted_bor = BigDecimal::zero();
+        let mut cum_supply = BigDecimal::zero();
+        let mut cum_borrow = BigDecimal::zero();
+
+        for p in &bucket_points {
+            let tvl = &p.total_supply_usd + &p.total_collateral_usd;
+            let util = utilization(&p.total_supply_assets, &p.total_borrow_assets);
+            let supply_apy = derive_supply_apy(&p.borrow_apy, &p.total_supply_assets, &p.total_borrow_assets, &p.fee);
+
+            total_supply += &p.total_supply_usd;
+            total_borrow += &p.total_borrow_usd;
+            total_collateral += &p.total_collateral_usd;
+            weighted_util += &util * &tvl;
+            weighted_sup += &supply_apy * &tvl;
+            weighted_bor += &p.borrow_apy * &tvl;
+            total_tvl += tvl;
+            cum_supply += &p.cumulative_supply_volume_usd;
+            cum_borrow += &p.cumulative_borrow_volume_usd;
+        }
+
+        let (util, sup_apr, bor_apr) = if total_tvl.is_zero() {
+            (BigDecimal::zero(), BigDecimal::zero(), BigDecimal::zero())
+        } else {
+            (weighted_util / &total_tvl, weighted_sup / &total_tvl, weighted_bor / &total_tvl)
+        };
+
+        response.timestamps.push(bucket_ts.and_utc().timestamp_millis());
+        response.tvl_usd.push(total_tvl.with_scale(2));
+        response.supply_usd.push(total_supply.with_scale(2));
+        response.borrow_usd.push(total_borrow.with_scale(2));
+        response.utilization.push(util.with_scale(3));
+        response.supply_apr.push(sup_apr.with_scale(3));
+        response.borrow_apr.push(bor_apr.with_scale(3));
+        response.cumulative_supply_volume_usd.push(cum_supply.with_scale(2));
+        response.cumulative_borrow_volume_usd.push(cum_borrow.with_scale(2));
+    }
+    response
 }
