@@ -278,10 +278,14 @@ fn struct_arg(fields: Vec<serde_json::Value>) -> serde_json::Value {
     serde_json::json!({ "type": "Array", "value": fields })
 }
 
-/// IRM `rate_per_second` (WAD-scaled) → annualized APY as a plain decimal (e.g. `0.0543` for 5.43%).
+/// IRM `rate_per_second` (WAD-scaled) → annualized borrow APY as a plain decimal
+/// (e.g. `0.0543` for 5.43%). 3-term Taylor approximation of `e^(rate·SECONDS_PER_YEAR / WAD) − 1`.
 pub fn rate_per_second_to_apy(rate_per_second: &BigDecimal) -> BigDecimal {
     let wad = BigDecimal::from_str(WAD).unwrap();
-    (rate_per_second * BigDecimal::from(SECONDS_PER_YEAR)) / wad
+    let first_term = rate_per_second * BigDecimal::from(SECONDS_PER_YEAR);
+    let second_term = (&first_term * &first_term) / (BigDecimal::from(2) * &wad);
+    let third_term = (&second_term * &first_term) / (BigDecimal::from(3) * &wad);
+    (first_term + second_term + third_term) / wad
 }
 
 /// `supply_rate = borrow_rate × utilization × (1 − fee_normalized)`, where
