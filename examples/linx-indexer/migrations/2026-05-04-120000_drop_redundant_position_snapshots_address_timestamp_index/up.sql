@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_lending_position_snapshots_address_timestamp;
