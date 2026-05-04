@@ -204,8 +204,35 @@ impl LendingRepository {
         Ok(())
     }
 
+    /// `(id, snapshot_timestamp)` for every snapshot of a market, ascending by timestamp.
+    pub async fn list_snapshot_ids_for_market(&self, market_id_value: &str) -> Result<Vec<(i32, NaiveDateTime)>> {
+        use schema::market_state_snapshots::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let rows: Vec<(i32, NaiveDateTime)> = market_state_snapshots
+            .filter(market_id.eq(market_id_value))
+            .select((id, snapshot_timestamp))
+            .order(snapshot_timestamp.asc())
+            .load(&mut conn)
+            .await?;
+        Ok(rows)
+    }
+
+    pub async fn update_cumulative_volumes(
+        &self,
+        snapshot_id: i32,
+        supply_usd: &BigDecimal,
+        borrow_usd: &BigDecimal,
+    ) -> Result<()> {
+        use schema::market_state_snapshots::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        diesel::update(market_state_snapshots.filter(id.eq(snapshot_id)))
+            .set((cumulative_supply_volume_usd.eq(supply_usd), cumulative_borrow_volume_usd.eq(borrow_usd)))
+            .execute(&mut conn)
+            .await?;
+        Ok(())
+    }
+
     /// Latest snapshot per market (DISTINCT ON (market_id) ORDER BY snapshot_timestamp DESC).
-    /// Used by MarketStateSnapshotService to carry forward cumulative volumes across ticks.
     pub async fn get_latest_market_state_snapshots(&self) -> Result<Vec<MarketStateSnapshot>> {
         use schema::market_state_snapshots::dsl::*;
         let mut conn = self.db_pool.get().await?;
@@ -283,8 +310,7 @@ impl LendingRepository {
     }
 
     /// SUM(amount) of lending events of a given type for a market within a half-open
-    /// time window `(since, until]`. Used to add the per-tick delta to the running
-    /// cumulative volume.
+    /// time window `(since, until]`.
     pub async fn sum_event_amounts(
         &self,
         market_id_value: &str,

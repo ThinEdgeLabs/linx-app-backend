@@ -1,6 +1,6 @@
 use crate::constants::{ALPH_TOKEN_ID, SECONDS_PER_YEAR, WAD};
 use crate::jobs::PeriodicJob;
-use crate::models::{Market, MarketStateSnapshot, NewMarketStateSnapshot};
+use crate::models::{Market, NewMarketStateSnapshot};
 use crate::random_tx_id;
 use crate::repository::LendingRepository;
 use crate::services::price::token_service::TokenService;
@@ -11,7 +11,6 @@ use bento_trait::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, network::Network};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, NaiveDateTime};
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,13 +40,9 @@ impl MarketStateSnapshotService {
         let markets = self.lending_repository.get_all_markets().await?;
         tracing::info!("Generating market state snapshots for {} markets", markets.len());
 
-        let prev_snapshots = self.lending_repository.get_latest_market_state_snapshots().await?;
-        let prev_by_market: HashMap<String, MarketStateSnapshot> =
-            prev_snapshots.into_iter().map(|s| (s.market_id.clone(), s)).collect();
-
         let mut snapshots = Vec::new();
         for market in markets {
-            match self.build_snapshot(&market, snapshot_time, prev_by_market.get(&market.id)).await {
+            match self.build_snapshot(&market, snapshot_time).await {
                 Ok(snap) => snapshots.push(snap),
                 Err(e) => tracing::error!("Failed to build snapshot for market {}: {}", market.id, e),
             }
@@ -61,12 +56,7 @@ impl MarketStateSnapshotService {
         Ok(())
     }
 
-    async fn build_snapshot(
-        &self,
-        market: &Market,
-        snapshot_time: NaiveDateTime,
-        prev: Option<&MarketStateSnapshot>,
-    ) -> Result<NewMarketStateSnapshot> {
+    async fn build_snapshot(&self, market: &Market, snapshot_time: NaiveDateTime) -> Result<NewMarketStateSnapshot> {
         let state = fetch_market_state(&self.client, &self.linx_address, self.linx_group, &market.id).await?;
 
         let market_address = crate::address_from_contract_id(&market.market_contract_id);
@@ -98,17 +88,13 @@ impl MarketStateSnapshotService {
         let borrow_apy = rate_per_second_to_apy(&borrow_rate_per_second);
 
         let epoch = DateTime::from_timestamp(0, 0).unwrap().naive_utc();
-        let since = prev.map(|p| p.snapshot_timestamp).unwrap_or(epoch);
-        let prev_cum_supply = prev.map(|p| p.cumulative_supply_volume_usd.clone()).unwrap_or_else(BigDecimal::zero);
-        let prev_cum_borrow = prev.map(|p| p.cumulative_borrow_volume_usd.clone()).unwrap_or_else(BigDecimal::zero);
+        let cum_supply_amount =
+            self.lending_repository.sum_event_amounts(&market.id, "Supply", epoch, snapshot_time).await?;
+        let cum_borrow_amount =
+            self.lending_repository.sum_event_amounts(&market.id, "Borrow", epoch, snapshot_time).await?;
 
-        let delta_supply_amount =
-            self.lending_repository.sum_event_amounts(&market.id, "Supply", since, snapshot_time).await?;
-        let delta_borrow_amount =
-            self.lending_repository.sum_event_amounts(&market.id, "Borrow", since, snapshot_time).await?;
-
-        let delta_supply_usd = loan_info.convert_to_decimal(&delta_supply_amount) * &loan_price;
-        let delta_borrow_usd = loan_info.convert_to_decimal(&delta_borrow_amount) * &loan_price;
+        let cum_supply_usd = loan_info.convert_to_decimal(&cum_supply_amount) * &loan_price;
+        let cum_borrow_usd = loan_info.convert_to_decimal(&cum_borrow_amount) * &loan_price;
 
         let bad_debt_assets = self.lending_repository.sum_bad_debt_assets(&market.id).await?;
         let bad_debt_usd = loan_info.convert_to_decimal(&bad_debt_assets) * &loan_price;
@@ -126,8 +112,8 @@ impl MarketStateSnapshotService {
             total_collateral_usd: total_collateral_usd.with_scale(2),
             borrow_apy: borrow_apy.with_scale(3),
             fee: state.fee.clone(),
-            cumulative_supply_volume_usd: (prev_cum_supply + delta_supply_usd).with_scale(2),
-            cumulative_borrow_volume_usd: (prev_cum_borrow + delta_borrow_usd).with_scale(2),
+            cumulative_supply_volume_usd: cum_supply_usd.with_scale(2),
+            cumulative_borrow_volume_usd: cum_borrow_usd.with_scale(2),
             bad_debt_usd: bad_debt_usd.with_scale(2),
         })
     }
