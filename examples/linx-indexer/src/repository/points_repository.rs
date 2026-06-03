@@ -121,6 +121,10 @@ pub trait PointsRepositoryTrait {
     /// season, since `total_points` is a cumulative per-season running total.
     async fn get_global_leaderboard(&self, limit: i64) -> Result<Vec<LeaderboardEntry>>;
 
+    /// Aggregated points and global rank for a single address across all seasons.
+    /// Returns `(points, rank)`, or `None` when the address has no snapshots in any season.
+    async fn get_global_user_points(&self, address: &str) -> Result<Option<(i64, i64)>>;
+
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
 
@@ -696,6 +700,49 @@ impl PointsRepositoryTrait for PointsRepository {
         .await?;
 
         Ok(leaderboard)
+    }
+
+    async fn get_global_user_points(&self, address: &str) -> Result<Option<(i64, i64)>> {
+        use diesel::sql_types::Text;
+
+        let mut conn = self.db_pool.get().await?;
+
+        // Build each address's all-seasons total (sum of the latest snapshot per season),
+        // then rank this address against all others by that total.
+        #[derive(QueryableByName, Debug)]
+        struct GlobalUserPointsRow {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            points: i64,
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            rank: i64,
+        }
+
+        let row: Option<GlobalUserPointsRow> = diesel::sql_query(
+            r#"
+            WITH per_season AS (
+                SELECT DISTINCT ON (address, season_id)
+                       address, total_points AS latest_points
+                FROM points_snapshots
+                ORDER BY address, season_id, snapshot_date DESC
+            ),
+            totals AS (
+                SELECT address, SUM(latest_points)::bigint AS points
+                FROM per_season
+                GROUP BY address
+            )
+            SELECT
+                t.points,
+                (SELECT COUNT(*) FROM totals t2 WHERE t2.points > t.points) + 1 AS rank
+            FROM totals t
+            WHERE t.address = $1
+            "#,
+        )
+        .bind::<Text, _>(address)
+        .get_result(&mut conn)
+        .await
+        .optional()?;
+
+        Ok(row.map(|r| (r.points, r.rank)))
     }
 
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()> {
