@@ -15,6 +15,10 @@ path = "src/bin/points.rs"
 name = "snapshots"
 path = "src/bin/snapshots.rs"
 
+[[bin]]
+name = "normalize_groupless_addresses"
+path = "src/bin/normalize_groupless_addresses.rs"
+
 [dependencies]
 bento-core = { path = "../../crates/bento-core" }
 bento-cli = { path = "../../crates/bento-cli" }
