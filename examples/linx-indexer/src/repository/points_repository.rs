@@ -16,6 +16,7 @@ use crate::{
         NewPointsConfig, NewPointsMultiplier, NewPointsSnapshot, NewReferralCode, NewSeason, NewUserReferral,
         PointsConfig, PointsMultiplier, PointsSnapshot, ReferralCode, Season, UserReferral,
     },
+    routers::points_router::LeaderboardEntry,
     schema,
 };
 
@@ -114,6 +115,11 @@ pub trait PointsRepositoryTrait {
         page: i64,
         limit: i64,
     ) -> Result<Vec<PointsSnapshot>>;
+
+    /// Aggregated leaderboard across all seasons, capped at `limit` entries.
+    /// Each user's score is the sum of their latest snapshot's `total_points` in every
+    /// season, since `total_points` is a cumulative per-season running total.
+    async fn get_global_leaderboard(&self, limit: i64) -> Result<Vec<LeaderboardEntry>>;
 
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()>;
     async fn upsert_snapshot(&self, snapshot: NewPointsSnapshot) -> Result<PointsSnapshot>;
@@ -662,6 +668,34 @@ impl PointsRepositoryTrait for PointsRepository {
             .await?;
 
         Ok(snapshots)
+    }
+
+    async fn get_global_leaderboard(&self, limit: i64) -> Result<Vec<LeaderboardEntry>> {
+        use diesel::sql_types::BigInt;
+
+        let mut conn = self.db_pool.get().await?;
+
+        // For each (address, season) take the most recent snapshot's cumulative total,
+        // then sum those per-season totals into a single all-time score per address.
+        let leaderboard: Vec<LeaderboardEntry> = diesel::sql_query(
+            r#"
+            SELECT address AS "user", SUM(latest_points)::bigint AS points
+            FROM (
+                SELECT DISTINCT ON (address, season_id)
+                       address, total_points AS latest_points
+                FROM points_snapshots
+                ORDER BY address, season_id, snapshot_date DESC
+            ) per_season
+            GROUP BY address
+            ORDER BY points DESC
+            LIMIT $1
+            "#,
+        )
+        .bind::<BigInt, _>(limit)
+        .load(&mut conn)
+        .await?;
+
+        Ok(leaderboard)
     }
 
     async fn insert_snapshots(&self, snapshots: &[NewPointsSnapshot]) -> Result<()> {

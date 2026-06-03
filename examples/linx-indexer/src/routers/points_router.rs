@@ -30,10 +30,12 @@ impl PointsRouter {
 
 // ==================== Response Models ====================
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, diesel::QueryableByName)]
 pub struct LeaderboardEntry {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub user: String,
-    pub points: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub points: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -77,6 +79,14 @@ pub struct UserPointsQuery {
     pub season_id: Option<i32>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct LeaderboardQuery {
+    /// Specific season id. Omit for the active season. Mutually exclusive with all_seasons.
+    pub season_id: Option<i32>,
+    /// When true, return an aggregated leaderboard across all seasons.
+    pub all_seasons: Option<bool>,
+}
+
 fn default_page() -> i64 {
     0
 }
@@ -102,32 +112,54 @@ fn default_limit() -> i64 {
 
 /// Get points leaderboard
 ///
-/// Returns the top 50 users ranked by their total points from the latest snapshot for the active season.
+/// Returns the top 50 users ranked by their total points. By default uses the latest snapshot
+/// for the active season. Pass `season_id` for a specific season, or `all_seasons=true` for an
+/// aggregated leaderboard across all seasons. `season_id` and `all_seasons` are mutually exclusive.
 #[utoipa::path(
     get,
     path = "/points/leaderboard",
     tag = "Points",
+    params(LeaderboardQuery),
     responses(
         (status = 200, description = "Successfully retrieved leaderboard", body = Vec<LeaderboardEntry>),
+        (status = 400, description = "season_id and all_seasons are mutually exclusive"),
         (status = 404, description = "No active season found"),
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    // Create repository
+pub async fn get_leaderboard_handler(
+    Query(query): Query<LeaderboardQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
 
-    // Get active season
-    let active_season =
-        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let all_seasons = query.all_seasons.unwrap_or(false);
 
-    // Fetch top 50 from latest snapshot (season_id, snapshot_date = None, page = 1, limit = 50)
-    let snapshots = repo.get_leaderboard(active_season.id, None, 1, 50).await?;
+    if query.season_id.is_some() && all_seasons {
+        return Err(AppError::BadRequest("season_id and all_seasons are mutually exclusive".to_string()));
+    }
+
+    // Aggregated all-seasons leaderboard.
+    if all_seasons {
+        let leaderboard = repo.get_global_leaderboard(50).await?;
+        return Ok(Json(leaderboard));
+    }
+
+    // Resolve the season: explicit season_id, or fall back to the active season.
+    let season_id = match query.season_id {
+        Some(id) => id,
+        None => {
+            repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?.id
+        }
+    };
+
+    // Fetch top 50 from the latest snapshot for the season.
+    let snapshots = repo.get_leaderboard(season_id, None, 1, 50).await?;
 
     // Map to simplified response format
     let leaderboard: Vec<LeaderboardEntry> = snapshots
         .into_iter()
-        .map(|snapshot| LeaderboardEntry { user: snapshot.address, points: snapshot.total_points })
+        .map(|snapshot| LeaderboardEntry { user: snapshot.address, points: i64::from(snapshot.total_points) })
         .collect();
 
     Ok(Json(leaderboard))
