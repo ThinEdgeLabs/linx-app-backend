@@ -457,6 +457,9 @@ pub struct ShareImageQuery {
     /// Image format: "portrait" (default) or "landscape"
     #[serde(default = "default_format")]
     pub format: String,
+    /// Include the referral code on the image (default: false / no-referral template)
+    #[serde(default)]
+    pub referral: bool,
 }
 
 fn default_format() -> String {
@@ -465,7 +468,8 @@ fn default_format() -> String {
 
 /// Get share image
 ///
-/// Returns a PNG image for social sharing, showing the user's previous season points and referral code.
+/// Returns a PNG image for social sharing, showing the user's total points across all seasons.
+/// By default the no-referral template is used; pass `?referral=true` to include the referral code.
 /// The path parameter is the user's referral code (not their address) to avoid exposing addresses in shared links.
 pub async fn get_share_image_handler(
     Path(referral_code): Path<String>,
@@ -485,25 +489,16 @@ pub async fn get_share_image_handler(
         .await?
         .ok_or_else(|| AppError::NotFound("Referral code not found".to_string()))?;
 
-    let active_season =
-        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
-
-    let previous_season_number = (active_season.season_number - 1).max(1);
-    let seasons = repo.get_all_seasons().await?;
-    let season = seasons
-        .into_iter()
-        .find(|s| s.season_number == previous_season_number)
-        .ok_or_else(|| AppError::NotFound("Previous season not found".to_string()))?;
-
-    let snapshot = repo
-        .get_latest_snapshot(&referral.owner_address, season.id)
+    let (total_points, _rank) = repo
+        .get_global_user_points(&referral.owner_address)
         .await?
         .ok_or_else(|| AppError::NotFound("No points found for this user".to_string()))?;
 
-    let points = snapshot.total_points;
+    let points = i32::try_from(total_points).unwrap_or(i32::MAX);
 
+    let include_referral = query.referral;
     let png_bytes = tokio::task::spawn_blocking(move || {
-        crate::share_image::generate_share_image(points, &referral_code, image_format)
+        crate::share_image::generate_share_image(points, &referral_code, image_format, include_referral)
     })
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?
