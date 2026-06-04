@@ -1,4 +1,4 @@
-.PHONY: pull deploy start stop restart cli db clean-images check-version help
+.PHONY: pull deploy start stop restart cli db clean-images backup check-version help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -33,7 +33,7 @@ start: check-version
 	@echo "Services started."
 
 # Stop all services
-stop: check-version
+stop:
 	@echo "Stopping services..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml down
 
@@ -47,7 +47,7 @@ clean-images: check-version
 	@echo "Cleanup completed. Current version $(VERSION) images retained."
 
 # Access CLI container
-cli: check-version
+cli:
 	@echo "Connecting to CLI container..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml exec cli bash
 
@@ -55,6 +55,13 @@ cli: check-version
 sql-cli:
 	@echo "Connecting to database..."
 	@docker compose -f docker-compose.prod.yml exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+
+# Dump the database to a timestamped .sql file in the current directory
+backup:
+	@echo "Creating database backup..."
+	@docker compose -f docker-compose.prod.yml exec -T db \
+		sh -c 'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' > backup-$$(date +%Y%m%d-%H%M%S).sql
+	@echo "Backup done"
 
 # Show help
 help:
@@ -66,4 +73,5 @@ help:
 	@echo "  make restart       - Restart all services (stop + start)"
 	@echo "  make clean-images  - Remove old image versions, keep $(VERSION)"
 	@echo "  make cli           - Access CLI container interactively"
-	@echo "  make db            - Connect to PostgreSQL database"
+	@echo "  make sql-cli       - Connect to PostgreSQL database"
+	@echo "  make backup        - Dump the database to a timestamped .sql file"
