@@ -1,10 +1,9 @@
-.PHONY: pull deploy start stop restart cli db clean-images help
+.PHONY: pull deploy start stop restart cli db clean-images check-version help
 
 # Default target
 .DEFAULT_GOAL := help
 
-# Extract version from Cargo.toml
-VERSION := $(shell grep '^version = ' examples/linx-indexer/Cargo.toml | head -n1 | cut -d'"' -f2)
+# VERSION must be passed explicitly (e.g. `make deploy VERSION=1.10.0`).
 export VERSION
 
 # Load environment variables from .env file
@@ -13,24 +12,28 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
+# Fail fast if VERSION wasn't provided (e.g. `make deploy VERSION=1.10.0`)
+check-version:
+	@test -n "$(VERSION)" || { echo "Error: VERSION is required, e.g. make deploy VERSION=1.10.0"; exit 1; }
+
 # Pull images from DigitalOcean registry
-pull:
+pull: check-version
 	@echo "Pulling Docker images (version: $(VERSION))..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml pull indexer api cli
 	@echo "Pull completed (version: $(VERSION))."
 
 # Full deployment: stop, pull new images, clean old images, and start
-deploy: stop pull clean-images start
+deploy: check-version stop pull clean-images start
 	@echo "Deployment completed (version: $(VERSION))."
 
 # Start all services
-start:
+start: check-version
 	@echo "Starting services (version: $(VERSION))..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml up -d
 	@echo "Services started."
 
 # Stop all services
-stop:
+stop: check-version
 	@echo "Stopping services..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml down
 
@@ -38,13 +41,13 @@ stop:
 restart: stop start
 
 # Clean up old Docker images for this project
-clean-images:
+clean-images: check-version
 	@echo "Removing old linx-app-backend images..."
 	@docker images --format "{{.Repository}}:{{.Tag}}" | grep "linx-app-backend" | grep -v "$(VERSION)" | xargs -r docker rmi || true
 	@echo "Cleanup completed. Current version $(VERSION) images retained."
 
 # Access CLI container
-cli:
+cli: check-version
 	@echo "Connecting to CLI container..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml exec cli bash
 
