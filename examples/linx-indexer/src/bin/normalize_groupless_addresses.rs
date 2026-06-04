@@ -57,9 +57,24 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_cleanup(conn: &mut diesel_async::AsyncPgConnection) -> anyhow::Result<()> {
-    // 1. Source tables: strip the `:group` suffix. These are keyed by `id` and have no
-    //    pre-existing bare counterparts, so a blind update is safe (regular addresses
-    //    contain no colon and are untouched by split_part).
+    // 1. account_transactions has a UNIQUE index on the generated `tx_key` (which includes the
+    //    address), so stripping can collide. The only colliding rows are self cross-group
+    //    transfers (X:2 -> X:0): two records with identical (tx_id, tx_type, details) that strip
+    //    to the same key. The ingestion path now skips these, so delete the existing ones too.
+    let deleted_self_transfers = sql_query(
+        r#"
+        DELETE FROM account_transactions
+        WHERE tx_type = 'transfer'
+          AND split_part(details->>'from_address', ':', 1) = split_part(details->>'to_address', ':', 1)
+        "#,
+    )
+    .execute(conn)
+    .await?;
+    tracing::info!("account_transactions: deleted {deleted_self_transfers} self cross-group transfer row(s)");
+
+    // 2. Strip the `:group` suffix. account_transactions is collision-free after the delete
+    //    above; the other tables' unique keys don't include the address. Regular addresses
+    //    contain no colon and are untouched by split_part.
     for (table, column) in [
         ("account_transactions", "address"),
         ("lending_events", "on_behalf"),
@@ -73,11 +88,11 @@ async fn run_cleanup(conn: &mut diesel_async::AsyncPgConnection) -> anyhow::Resu
         tracing::info!("{table}.{column}: stripped suffix on {n} row(s)");
     }
 
-    // 2. points_snapshots: the suffixed `ADDR:0` rows carry the on-chain activity (base
+    // 3. points_snapshots: the suffixed `ADDR:0` rows carry the on-chain activity (base
     //    points + multiplier), while a bare `ADDR` row may already exist carrying signup
-    //    bonus / referrer points. They collide on UNIQUE(address, snapshot_date).
+    //    bonus / referrer points. They collide on UNIQUE(address, snapshot_date, season_id).
     //
-    //    2a. Where both exist for the same (snapshot_date, season_id), fold the suffixed
+    //    3a. Where both exist for the same (snapshot_date, season_id), fold the suffixed
     //        row into the existing bare row (sum component points; take the activity row's
     //        multiplier since the bonus row has none).
     let merged = sql_query(
@@ -104,7 +119,7 @@ async fn run_cleanup(conn: &mut diesel_async::AsyncPgConnection) -> anyhow::Resu
     .await?;
     tracing::info!("points_snapshots: merged {merged} suffixed row(s) into existing bare rows");
 
-    //    2b. Delete the suffixed rows that were just merged into a bare row.
+    //    3b. Delete the suffixed rows that were just merged into a bare row.
     let deleted = sql_query(
         r#"
         DELETE FROM points_snapshots s
@@ -121,7 +136,7 @@ async fn run_cleanup(conn: &mut diesel_async::AsyncPgConnection) -> anyhow::Resu
     .await?;
     tracing::info!("points_snapshots: deleted {deleted} merged suffixed row(s)");
 
-    //    2c. Relabel the remaining suffixed rows (no bare counterpart on that date/season,
+    //    3c. Relabel the remaining suffixed rows (no bare counterpart on that date/season,
     //        so this is now conflict-free) to the bare address.
     let relabeled = sql_query(
         "UPDATE points_snapshots SET address = split_part(address, ':', 1) WHERE address LIKE '%:%'",
@@ -130,7 +145,7 @@ async fn run_cleanup(conn: &mut diesel_async::AsyncPgConnection) -> anyhow::Resu
     .await?;
     tracing::info!("points_snapshots: relabeled {relabeled} remaining suffixed row(s) to bare");
 
-    // 3. Safety check: nothing suffixed should remain anywhere we touched.
+    // 4. Safety check: nothing suffixed should remain anywhere we touched.
     #[derive(diesel::QueryableByName)]
     struct Remaining {
         #[diesel(sql_type = diesel::sql_types::BigInt)]
