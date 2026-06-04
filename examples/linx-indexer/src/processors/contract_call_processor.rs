@@ -120,7 +120,7 @@ pub fn extract_contract_call(tx: &Transaction, block: &RichBlockEntry) -> Option
     let details_json = serde_json::to_value(&contract_call_details).ok()?;
 
     Some(NewAccountTransaction {
-        address: address.unwrap().to_string(),
+        address: crate::normalize_address(address.unwrap()).to_string(),
         tx_type: "contract_call".to_string(),
         tx_id: tx.unsigned.tx_id.to_string(),
         from_group: block.chain_from as i16,

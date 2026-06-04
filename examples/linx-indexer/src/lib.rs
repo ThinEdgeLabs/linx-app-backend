@@ -60,6 +60,13 @@ pub fn address_from_contract_id(contract_id: &str) -> String {
     bs58::encode(bytes).into_string()
 }
 
+/// Strip the Alephium group suffix from a groupless address.
+///
+/// Regular (non-groupless) addresses contain no colon and are returned unchanged.
+pub fn normalize_address(address: &str) -> &str {
+    address.split(':').next().unwrap_or(address)
+}
+
 pub fn random_tx_id() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
