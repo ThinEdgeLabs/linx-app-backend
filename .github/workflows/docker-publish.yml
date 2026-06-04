@@ -71,5 +71,5 @@ jobs:
             done
           done
 
-      - name: Run registry garbage collection
-        run: doctl registry garbage-collection start --include-untagged-manifests --force linx-labs
+      #- name: Run registry garbage collection
+      #  run: doctl registry garbage-collection start --include-untagged-manifests --force linx-labs
