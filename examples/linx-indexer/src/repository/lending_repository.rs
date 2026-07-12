@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bento_types::DbPool;
+use bento_types::models::processor_status::ProcessorStatusModel;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDateTime;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
@@ -637,6 +638,189 @@ impl LendingRepository {
             .optional()?;
         Ok(row)
     }
+
+    pub async fn get_processor_status(&self, name: &str) -> Result<Option<ProcessorStatusModel>> {
+        use bento_types::schema::processor_status::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let row =
+            processor_status.filter(processor.eq(name)).first::<ProcessorStatusModel>(&mut conn).await.optional()?;
+        Ok(row)
+    }
+
+    pub async fn upsert_processor_status(&self, name: &str, ts_millis: i64) -> Result<()> {
+        use bento_types::schema::processor_status::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        diesel::insert_into(processor_status)
+            .values(ProcessorStatusModel { processor: name.to_string(), last_timestamp: ts_millis })
+            .on_conflict(processor)
+            .do_update()
+            .set(last_timestamp.eq(ts_millis))
+            .execute(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Start of the UTC day containing the oldest position snapshot, or `None` if the table is empty.
+    pub async fn oldest_position_snapshot_day(&self) -> Result<Option<NaiveDateTime>> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
+            day: Option<NaiveDateTime>,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row = diesel::sql_query(
+            "SELECT date_trunc('day', MIN(timestamp))::timestamp AS day FROM lending_position_snapshots",
+        )
+        .get_result(&mut conn)
+        .await?;
+        Ok(row.day)
+    }
+
+    /// Per-day rollup: keep only the latest snapshot per `(address, market_id)` within
+    /// `[day_start, day_end)`, delete the rest. Returns the number of rows deleted.
+    pub async fn rollup_position_snapshots_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<usize> {
+        let mut conn = self.db_pool.get().await?;
+        let deleted = diesel::sql_query(
+            "DELETE FROM lending_position_snapshots \
+             WHERE timestamp >= $1 AND timestamp < $2 \
+               AND id NOT IN ( \
+                   SELECT DISTINCT ON (address, market_id) id \
+                   FROM lending_position_snapshots \
+                   WHERE timestamp >= $1 AND timestamp < $2 \
+                   ORDER BY address, market_id, timestamp DESC, id DESC \
+               )",
+        )
+        .bind::<diesel::sql_types::Timestamp, _>(day_start)
+        .bind::<diesel::sql_types::Timestamp, _>(day_end)
+        .execute(&mut conn)
+        .await?;
+        Ok(deleted)
+    }
+
+    /// Delete every snapshot in `[day_start, day_end)`. Returns the number of rows deleted.
+    pub async fn delete_position_snapshots_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<usize> {
+        use schema::lending_position_snapshots::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let deleted =
+            diesel::delete(lending_position_snapshots.filter(timestamp.ge(day_start)).filter(timestamp.lt(day_end)))
+                .execute(&mut conn)
+                .await?;
+        Ok(deleted)
+    }
+
+    /// Start of the UTC day containing the oldest block, or `None` if the table is empty.
+    pub async fn oldest_block_day(&self) -> Result<Option<NaiveDateTime>> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
+            day: Option<NaiveDateTime>,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row = diesel::sql_query("SELECT date_trunc('day', MIN(timestamp))::timestamp AS day FROM blocks")
+            .get_result(&mut conn)
+            .await?;
+        Ok(row.day)
+    }
+
+    /// Cascade-delete raw chain data for the blocks in `[day_start, day_end)`, anchored on
+    /// `blocks.timestamp`. Children are removed before parents so no orphans are left behind:
+    /// events (via `tx_id -> transactions -> blocks`), then transactions (via `block_hash`),
+    /// then the blocks themselves. There are no FK constraints between these tables, so the
+    /// ordering is enforced here rather than by the database.
+    pub async fn delete_chain_data_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<ChainDataDeleted> {
+        let mut conn = self.db_pool.get().await?;
+
+        // Events carry no timestamp of their own; reach them through their transaction's block.
+        // Events whose transaction has a NULL block_hash are unreachable here and are left intact.
+        let events = diesel::sql_query(
+            "DELETE FROM events e \
+             WHERE EXISTS ( \
+                 SELECT 1 FROM transactions t \
+                 JOIN blocks b ON b.hash = t.block_hash \
+                 WHERE t.tx_hash = e.tx_id AND b.timestamp >= $1 AND b.timestamp < $2 \
+             )",
+        )
+        .bind::<diesel::sql_types::Timestamp, _>(day_start)
+        .bind::<diesel::sql_types::Timestamp, _>(day_end)
+        .execute(&mut conn)
+        .await?;
+
+        let transactions = diesel::sql_query(
+            "DELETE FROM transactions t \
+             WHERE EXISTS ( \
+                 SELECT 1 FROM blocks b \
+                 WHERE b.hash = t.block_hash AND b.timestamp >= $1 AND b.timestamp < $2 \
+             )",
+        )
+        .bind::<diesel::sql_types::Timestamp, _>(day_start)
+        .bind::<diesel::sql_types::Timestamp, _>(day_end)
+        .execute(&mut conn)
+        .await?;
+
+        let blocks = diesel::sql_query("DELETE FROM blocks WHERE timestamp >= $1 AND timestamp < $2")
+            .bind::<diesel::sql_types::Timestamp, _>(day_start)
+            .bind::<diesel::sql_types::Timestamp, _>(day_end)
+            .execute(&mut conn)
+            .await?;
+
+        Ok(ChainDataDeleted { events, transactions, blocks })
+    }
+
+    /// Start of the UTC day containing the oldest account transaction, or `None` if empty.
+    pub async fn oldest_account_transaction_day(&self) -> Result<Option<NaiveDateTime>> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
+            day: Option<NaiveDateTime>,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row =
+            diesel::sql_query("SELECT date_trunc('day', MIN(timestamp))::timestamp AS day FROM account_transactions")
+                .get_result(&mut conn)
+                .await?;
+        Ok(row.day)
+    }
+
+    /// Delete every account transaction in `[day_start, day_end)`. Returns rows deleted.
+    pub async fn delete_account_transactions_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<usize> {
+        use schema::account_transactions::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let deleted =
+            diesel::delete(account_transactions.filter(timestamp.ge(day_start)).filter(timestamp.lt(day_end)))
+                .execute(&mut conn)
+                .await?;
+        Ok(deleted)
+    }
+}
+
+/// Per-table row counts deleted by a single [`LendingRepository::delete_chain_data_for_day`] call.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ChainDataDeleted {
+    pub events: usize,
+    pub transactions: usize,
+    pub blocks: usize,
+}
+
+impl ChainDataDeleted {
+    pub fn total(&self) -> usize {
+        self.events + self.transactions + self.blocks
+    }
 }
 
 #[async_trait]
@@ -662,33 +846,12 @@ impl LendingRepositoryTrait for LendingRepository {
 mod tests {
     use super::*;
     use crate::models::NewPositionSnapshot;
+    use crate::test_helpers::create_test_pool;
     use bigdecimal::BigDecimal;
     use chrono::{Duration, NaiveDate, Timelike, Utc};
     use diesel_async::AsyncPgConnection;
-    use diesel_async::pooled_connection::AsyncDieselConnectionManager;
     use diesel_async::pooled_connection::bb8::Pool;
     use std::str::FromStr;
-
-    async fn create_test_pool() -> Arc<Pool<AsyncPgConnection>> {
-        dotenvy::dotenv().ok();
-
-        let user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "postgres".to_string());
-        let password = std::env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
-        let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
-        let db = std::env::var("POSTGRES_DB").unwrap_or_else(|_| "bento_alephium".to_string());
-
-        let database_url = format!("postgresql://{}:{}@{}:{}/{}", user, password, host, port, db);
-
-        let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&database_url);
-        let pool = Pool::builder()
-            .max_size(2)
-            .build(config)
-            .await
-            .expect("Failed to create test DB pool. Is PostgreSQL running?");
-
-        Arc::new(pool)
-    }
 
     /// Clean up test data by exact address match.
     async fn cleanup_test_snapshots(pool: &Arc<Pool<AsyncPgConnection>>, address: &str) {

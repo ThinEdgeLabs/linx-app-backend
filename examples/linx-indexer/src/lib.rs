@@ -15,6 +15,9 @@ pub mod schema;
 pub mod services;
 pub mod share_image;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 /// Register all custom processor factories
 pub fn get_processor_factories() -> HashMap<String, ProcessorFactory> {
     let mut processor_factories = HashMap::new();
