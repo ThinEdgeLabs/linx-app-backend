@@ -185,10 +185,18 @@ fn extract_token_transfers(
             }
 
             if in_amount >= out_amount {
+                let from_norm = crate::normalize_address(from_addr);
+                let to_norm = crate::normalize_address(to_addr);
+
+                // Skip self cross-group transfers
+                if from_norm == to_norm {
+                    continue;
+                }
+
                 let transfer_details = TransferDetails {
                     token_id: token_id.to_string(),
-                    from_address: from_addr.to_string(),
-                    to_address: to_addr.to_string(),
+                    from_address: from_norm.to_string(),
+                    to_address: to_norm.to_string(),
                     amount: out_amount.clone(),
                 };
 
@@ -196,7 +204,7 @@ fn extract_token_transfers(
 
                 // Create record for sender
                 transfers.push(NewAccountTransaction {
-                    address: from_addr.to_string(),
+                    address: from_norm.to_string(),
                     tx_type: "transfer".to_string(),
                     tx_id: tx.unsigned.tx_id.to_string(),
                     from_group: block.chain_from as i16,
@@ -208,7 +216,7 @@ fn extract_token_transfers(
 
                 // Create record for receiver
                 transfers.push(NewAccountTransaction {
-                    address: to_addr.to_string(),
+                    address: to_norm.to_string(),
                     tx_type: "transfer".to_string(),
                     tx_id: tx.unsigned.tx_id.to_string(),
                     from_group: block.chain_from as i16,

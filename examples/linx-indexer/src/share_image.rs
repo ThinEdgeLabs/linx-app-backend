@@ -8,6 +8,16 @@ const PORTRAIT_SCALE: f32 = 2.0;
 const LANDSCAPE_SCALE: f32 = 1.0;
 const DEFAULT_PORTRAIT_PATH: &str = "assets/share_background.svg";
 const DEFAULT_LANDSCAPE_PATH: &str = "assets/share_background_landscape.svg";
+const DEFAULT_PORTRAIT_NO_REFERRAL_PATH: &str = "assets/share_background_no_referral.svg";
+const DEFAULT_LANDSCAPE_NO_REFERRAL_PATH: &str = "assets/share_background_landscape_no_referral.svg";
+
+const PORTRAIT_NO_REFERRAL_POINTS_X: f32 = 191.0;
+const PORTRAIT_NO_REFERRAL_POINTS_Y: f32 = 155.0;
+const PORTRAIT_NO_REFERRAL_POINTS_FONT_SIZE: f32 = 40.0;
+
+const LANDSCAPE_NO_REFERRAL_POINTS_X: f32 = 200.0;
+const LANDSCAPE_NO_REFERRAL_POINTS_Y: f32 = 345.0;
+const LANDSCAPE_NO_REFERRAL_POINTS_FONT_SIZE: f32 = 90.0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ImageFormat {
@@ -34,6 +44,18 @@ static BACKGROUND_PORTRAIT: LazyLock<Result<Pixmap, String>> =
 static BACKGROUND_LANDSCAPE: LazyLock<Result<Pixmap, String>> =
     LazyLock::new(|| pre_render_background("SHARE_TEMPLATE_LANDSCAPE_PATH", DEFAULT_LANDSCAPE_PATH, LANDSCAPE_SCALE));
 
+static BACKGROUND_PORTRAIT_NO_REFERRAL: LazyLock<Result<Pixmap, String>> = LazyLock::new(|| {
+    pre_render_background("SHARE_TEMPLATE_NO_REFERRAL_PATH", DEFAULT_PORTRAIT_NO_REFERRAL_PATH, PORTRAIT_SCALE)
+});
+
+static BACKGROUND_LANDSCAPE_NO_REFERRAL: LazyLock<Result<Pixmap, String>> = LazyLock::new(|| {
+    pre_render_background(
+        "SHARE_TEMPLATE_LANDSCAPE_NO_REFERRAL_PATH",
+        DEFAULT_LANDSCAPE_NO_REFERRAL_PATH,
+        LANDSCAPE_SCALE,
+    )
+});
+
 static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     // Try loading fonts from common Linux paths first (for Docker containers),
@@ -51,11 +73,17 @@ static FONTDB: LazyLock<fontdb::Database> = LazyLock::new(|| {
     db
 });
 
-pub fn generate_share_image(points: i32, referral_code: &str, format: ImageFormat) -> Result<Vec<u8>> {
-    let (background, scale, text_svg) = match format {
-        ImageFormat::Portrait => {
+pub fn generate_share_image(
+    points: i32,
+    referral_code: &str,
+    format: ImageFormat,
+    include_referral: bool,
+) -> Result<Vec<u8>> {
+    let formatted_points = format_with_commas(points);
+
+    let (background, scale, text_svg) = match (format, include_referral) {
+        (ImageFormat::Portrait, true) => {
             let bg = BACKGROUND_PORTRAIT.as_ref().map_err(|e| anyhow!("Portrait background not available: {}", e))?;
-            let formatted_points = format_with_commas(points);
             let svg = format!(
                 r#"<svg width="382" height="516" xmlns="http://www.w3.org/2000/svg">
   <text x="191" y="155" text-anchor="middle" fill="white" font-size="40" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
@@ -64,13 +92,34 @@ pub fn generate_share_image(points: i32, referral_code: &str, format: ImageForma
             );
             (bg, PORTRAIT_SCALE, svg)
         }
-        ImageFormat::Landscape => {
+        (ImageFormat::Landscape, true) => {
             let bg = BACKGROUND_LANDSCAPE.as_ref().map_err(|e| anyhow!("Landscape background not available: {}", e))?;
-            let formatted_points = format_with_commas(points);
             let svg = format!(
                 r#"<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
   <text x="325" y="330" text-anchor="middle" fill="white" font-size="90" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
   <text x="325" y="545" text-anchor="middle" fill="white" font-size="40" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{referral_code}</text>
+</svg>"#
+            );
+            (bg, LANDSCAPE_SCALE, svg)
+        }
+        (ImageFormat::Portrait, false) => {
+            let bg = BACKGROUND_PORTRAIT_NO_REFERRAL
+                .as_ref()
+                .map_err(|e| anyhow!("Portrait background not available: {}", e))?;
+            let svg = format!(
+                r#"<svg width="385" height="480" xmlns="http://www.w3.org/2000/svg">
+  <text x="{PORTRAIT_NO_REFERRAL_POINTS_X}" y="{PORTRAIT_NO_REFERRAL_POINTS_Y}" text-anchor="middle" fill="white" font-size="{PORTRAIT_NO_REFERRAL_POINTS_FONT_SIZE}" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
+</svg>"#
+            );
+            (bg, PORTRAIT_SCALE, svg)
+        }
+        (ImageFormat::Landscape, false) => {
+            let bg = BACKGROUND_LANDSCAPE_NO_REFERRAL
+                .as_ref()
+                .map_err(|e| anyhow!("Landscape background not available: {}", e))?;
+            let svg = format!(
+                r#"<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <text x="{LANDSCAPE_NO_REFERRAL_POINTS_X}" y="{LANDSCAPE_NO_REFERRAL_POINTS_Y}" text-anchor="middle" fill="white" font-size="{LANDSCAPE_NO_REFERRAL_POINTS_FONT_SIZE}" font-weight="bold" font-family="Arial, Liberation Sans, Helvetica, sans-serif">{formatted_points}</text>
 </svg>"#
             );
             (bg, LANDSCAPE_SCALE, svg)
@@ -133,7 +182,23 @@ mod tests {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/assets/share_background.svg"),
             );
         }
-        let result = generate_share_image(65992, "CLEAN-RAVEN-730", ImageFormat::Portrait);
+        let result = generate_share_image(65992, "CLEAN-RAVEN-730", ImageFormat::Portrait, true);
+        assert!(result.is_ok());
+        let png_bytes = result.unwrap();
+        // Verify PNG magic bytes
+        assert_eq!(&png_bytes[..4], &[0x89, 0x50, 0x4E, 0x47]);
+    }
+
+    #[test]
+    #[ignore = "requires share_background_no_referral.svg asset"]
+    fn test_generate_share_image_no_referral() {
+        unsafe {
+            std::env::set_var(
+                "SHARE_TEMPLATE_NO_REFERRAL_PATH",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/share_background_no_referral.svg"),
+            );
+        }
+        let result = generate_share_image(65992, "CLEAN-RAVEN-730", ImageFormat::Portrait, false);
         assert!(result.is_ok());
         let png_bytes = result.unwrap();
         // Verify PNG magic bytes

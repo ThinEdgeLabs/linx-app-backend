@@ -1,6 +1,6 @@
 [package]
 name = "linx-indexer"
-version = "1.9.1"
+version = "1.10.0"
 edition = "2024"
 
 [[bin]]
@@ -14,6 +14,10 @@ path = "src/bin/points.rs"
 [[bin]]
 name = "snapshots"
 path = "src/bin/snapshots.rs"
+
+[[bin]]
+name = "normalize_groupless_addresses"
+path = "src/bin/normalize_groupless_addresses.rs"
 
 [dependencies]
 bento-core = { path = "../../crates/bento-core" }

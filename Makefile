@@ -1,10 +1,9 @@
-.PHONY: pull deploy start stop restart cli db clean-images help
+.PHONY: pull deploy start stop restart cli db clean-images backup check-version help
 
 # Default target
 .DEFAULT_GOAL := help
 
-# Extract version from Cargo.toml
-VERSION := $(shell grep '^version = ' examples/linx-indexer/Cargo.toml | head -n1 | cut -d'"' -f2)
+# VERSION must be passed explicitly (e.g. `make deploy VERSION=1.10.0`).
 export VERSION
 
 # Load environment variables from .env file
@@ -13,18 +12,22 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
+# Fail fast if VERSION wasn't provided (e.g. `make deploy VERSION=1.10.0`)
+check-version:
+	@test -n "$(VERSION)" || { echo "Error: VERSION is required, e.g. make deploy VERSION=1.10.0"; exit 1; }
+
 # Pull images from DigitalOcean registry
-pull:
+pull: check-version
 	@echo "Pulling Docker images (version: $(VERSION))..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml pull indexer api cli
 	@echo "Pull completed (version: $(VERSION))."
 
 # Full deployment: stop, pull new images, clean old images, and start
-deploy: stop pull clean-images start
+deploy: check-version stop pull clean-images start
 	@echo "Deployment completed (version: $(VERSION))."
 
 # Start all services
-start:
+start: check-version
 	@echo "Starting services (version: $(VERSION))..."
 	VERSION=$(VERSION) docker compose -f docker-compose.prod.yml up -d
 	@echo "Services started."
@@ -38,7 +41,7 @@ stop:
 restart: stop start
 
 # Clean up old Docker images for this project
-clean-images:
+clean-images: check-version
 	@echo "Removing old linx-app-backend images..."
 	@docker images --format "{{.Repository}}:{{.Tag}}" | grep "linx-app-backend" | grep -v "$(VERSION)" | xargs -r docker rmi || true
 	@echo "Cleanup completed. Current version $(VERSION) images retained."
@@ -53,6 +56,13 @@ sql-cli:
 	@echo "Connecting to database..."
 	@docker compose -f docker-compose.prod.yml exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 
+# Dump the database to a timestamped .sql file in the current directory
+backup:
+	@echo "Creating database backup..."
+	@docker compose -f docker-compose.prod.yml exec -T db \
+		sh -c 'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' > backup-$$(date +%Y%m%d-%H%M%S).sql
+	@echo "Backup done"
+
 # Show help
 help:
 	@echo "Available commands:"
@@ -63,4 +73,5 @@ help:
 	@echo "  make restart       - Restart all services (stop + start)"
 	@echo "  make clean-images  - Remove old image versions, keep $(VERSION)"
 	@echo "  make cli           - Access CLI container interactively"
-	@echo "  make db            - Connect to PostgreSQL database"
+	@echo "  make sql-cli       - Connect to PostgreSQL database"
+	@echo "  make backup        - Dump the database to a timestamped .sql file"

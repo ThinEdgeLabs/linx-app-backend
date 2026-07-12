@@ -130,7 +130,7 @@ impl DexProcessor {
             return None;
         }
 
-        let sender = self.extract_string_field(&event.fields, 0)?;
+        let sender = crate::normalize_address(&self.extract_string_field(&event.fields, 0)?).to_string();
         let token_a_in = self.extract_bigdecimal_field(&event.fields, 1)?;
         let token_b_in = self.extract_bigdecimal_field(&event.fields, 2)?;
         let token_a_out = self.extract_bigdecimal_field(&event.fields, 3)?;
@@ -192,7 +192,7 @@ impl DexProcessor {
             return None;
         }
 
-        let sender = self.extract_string_field(&event.fields, 0)?;
+        let sender = crate::normalize_address(&self.extract_string_field(&event.fields, 0)?).to_string();
         //let receiver = self.extract_string_field(&event.fields, 5)?;
 
         let token_a_in = self.extract_bigdecimal_field(&event.fields, 1)?;

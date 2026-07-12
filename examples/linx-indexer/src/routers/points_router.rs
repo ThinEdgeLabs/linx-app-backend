@@ -6,7 +6,6 @@ use axum::{
     routing::{get, post},
 };
 use bento_server::{AppState, error::AppError};
-// use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
@@ -30,15 +29,17 @@ impl PointsRouter {
 
 // ==================== Response Models ====================
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema, diesel::QueryableByName)]
 pub struct LeaderboardEntry {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub user: String,
-    pub points: i32,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub points: i64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct UserPointsResponse {
-    pub points: i32,
+    pub points: i64,
     pub rank: i64,
     pub referral_code: String,
     pub referrals: i64,
@@ -73,8 +74,18 @@ pub struct ReferralDetailsQuery {
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserPointsQuery {
-    /// Optional season ID. If not provided, uses the active season.
+    /// Optional season ID. If not provided, uses the active season. Mutually exclusive with all_seasons.
     pub season_id: Option<i32>,
+    /// When true, return points and rank aggregated across all seasons.
+    pub all_seasons: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct LeaderboardQuery {
+    /// Specific season id. Omit for the active season. Mutually exclusive with all_seasons.
+    pub season_id: Option<i32>,
+    /// When true, return an aggregated leaderboard across all seasons.
+    pub all_seasons: Option<bool>,
 }
 
 fn default_page() -> i64 {
@@ -102,32 +113,54 @@ fn default_limit() -> i64 {
 
 /// Get points leaderboard
 ///
-/// Returns the top 50 users ranked by their total points from the latest snapshot for the active season.
+/// Returns the top 50 users ranked by their total points. By default uses the latest snapshot
+/// for the active season. Pass `season_id` for a specific season, or `all_seasons=true` for an
+/// aggregated leaderboard across all seasons. `season_id` and `all_seasons` are mutually exclusive.
 #[utoipa::path(
     get,
     path = "/points/leaderboard",
     tag = "Points",
+    params(LeaderboardQuery),
     responses(
         (status = 200, description = "Successfully retrieved leaderboard", body = Vec<LeaderboardEntry>),
+        (status = 400, description = "season_id and all_seasons are mutually exclusive"),
         (status = 404, description = "No active season found"),
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
-    // Create repository
+pub async fn get_leaderboard_handler(
+    Query(query): Query<LeaderboardQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
 
-    // Get active season
-    let active_season =
-        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
+    let all_seasons = query.all_seasons.unwrap_or(false);
 
-    // Fetch top 50 from latest snapshot (season_id, snapshot_date = None, page = 1, limit = 50)
-    let snapshots = repo.get_leaderboard(active_season.id, None, 1, 50).await?;
+    if query.season_id.is_some() && all_seasons {
+        return Err(AppError::BadRequest("season_id and all_seasons are mutually exclusive".to_string()));
+    }
+
+    // Aggregated all-seasons leaderboard.
+    if all_seasons {
+        let leaderboard = repo.get_global_leaderboard(50).await?;
+        return Ok(Json(leaderboard));
+    }
+
+    // Resolve the season: explicit season_id, or fall back to the active season.
+    let season_id = match query.season_id {
+        Some(id) => id,
+        None => {
+            repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?.id
+        }
+    };
+
+    // Fetch top 50 from the latest snapshot for the season.
+    let snapshots = repo.get_leaderboard(season_id, None, 1, 50).await?;
 
     // Map to simplified response format
     let leaderboard: Vec<LeaderboardEntry> = snapshots
         .into_iter()
-        .map(|snapshot| LeaderboardEntry { user: snapshot.address, points: snapshot.total_points })
+        .map(|snapshot| LeaderboardEntry { user: snapshot.address, points: i64::from(snapshot.total_points) })
         .collect();
 
     Ok(Json(leaderboard))
@@ -137,6 +170,8 @@ pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<im
 ///
 /// Returns the total points for a specific user address from the latest snapshot for a season,
 /// along with their referral code. If no season_id is provided, uses the active season.
+/// Pass `all_seasons=true` for points and rank aggregated across all seasons
+/// (`season_id` and `all_seasons` are mutually exclusive).
 #[utoipa::path(
     get,
     path = "/points/{address}",
@@ -147,6 +182,7 @@ pub async fn get_leaderboard_handler(State(state): State<AppState>) -> Result<im
     ),
     responses(
         (status = 200, description = "Successfully retrieved user points", body = UserPointsResponse),
+        (status = 400, description = "season_id and all_seasons are mutually exclusive"),
         (status = 404, description = "User snapshot not found or no active season"),
         (status = 500, description = "Internal server error")
     )
@@ -158,9 +194,33 @@ pub async fn get_user_points_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let repo = PointsRepository::new(state.db.clone());
 
+    let all_seasons = query.all_seasons.unwrap_or(false);
+
+    if query.season_id.is_some() && all_seasons {
+        return Err(AppError::BadRequest("season_id and all_seasons are mutually exclusive".to_string()));
+    }
+
     // Check if user has applied a referral code
     let user_referral = repo.get_user_referral(&address).await?;
     let has_applied_referral_code = user_referral.is_some();
+
+    // Aggregated all-seasons view: points and rank summed/ranked across every season.
+    // Referral fields below are season-independent and computed the same way as the per-season path.
+    if all_seasons {
+        let (points, rank) = repo.get_global_user_points(&address).await?.unwrap_or((0, 0));
+
+        let referral_code = repo.get_or_create_referral_code(&address).await?;
+        let referrals = repo.count_referrals_by_address(&address).await?;
+
+        return Ok(Json(UserPointsResponse {
+            points,
+            rank,
+            referral_code,
+            referrals,
+            has_applied_referral_code,
+            token_allocation: "0".to_string(),
+        }));
+    }
 
     // Get season by ID or fall back to active season
     let season = match query.season_id {
@@ -193,7 +253,7 @@ pub async fn get_user_points_handler(
             let token_allocation = "0".to_string();
 
             Ok(Json(UserPointsResponse {
-                points: snapshot.total_points,
+                points: i64::from(snapshot.total_points),
                 rank,
                 referral_code,
                 referrals,
@@ -397,6 +457,9 @@ pub struct ShareImageQuery {
     /// Image format: "portrait" (default) or "landscape"
     #[serde(default = "default_format")]
     pub format: String,
+    /// Include the referral code on the image (default: false / no-referral template)
+    #[serde(default)]
+    pub referral: bool,
 }
 
 fn default_format() -> String {
@@ -405,7 +468,8 @@ fn default_format() -> String {
 
 /// Get share image
 ///
-/// Returns a PNG image for social sharing, showing the user's previous season points and referral code.
+/// Returns a PNG image for social sharing, showing the user's total points across all seasons.
+/// By default the no-referral template is used; pass `?referral=true` to include the referral code.
 /// The path parameter is the user's referral code (not their address) to avoid exposing addresses in shared links.
 pub async fn get_share_image_handler(
     Path(referral_code): Path<String>,
@@ -425,25 +489,16 @@ pub async fn get_share_image_handler(
         .await?
         .ok_or_else(|| AppError::NotFound("Referral code not found".to_string()))?;
 
-    let active_season =
-        repo.get_active_season().await?.ok_or_else(|| AppError::NotFound("No active season found".to_string()))?;
-
-    let previous_season_number = (active_season.season_number - 1).max(1);
-    let seasons = repo.get_all_seasons().await?;
-    let season = seasons
-        .into_iter()
-        .find(|s| s.season_number == previous_season_number)
-        .ok_or_else(|| AppError::NotFound("Previous season not found".to_string()))?;
-
-    let snapshot = repo
-        .get_latest_snapshot(&referral.owner_address, season.id)
+    let (total_points, _rank) = repo
+        .get_global_user_points(&referral.owner_address)
         .await?
         .ok_or_else(|| AppError::NotFound("No points found for this user".to_string()))?;
 
-    let points = snapshot.total_points;
+    let points = i32::try_from(total_points).unwrap_or(i32::MAX);
 
+    let include_referral = query.referral;
     let png_bytes = tokio::task::spawn_blocking(move || {
-        crate::share_image::generate_share_image(points, &referral_code, image_format)
+        crate::share_image::generate_share_image(points, &referral_code, image_format, include_referral)
     })
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("Image generation task failed: {}", e)))?

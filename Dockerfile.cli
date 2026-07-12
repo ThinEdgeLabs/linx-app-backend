@@ -24,10 +24,8 @@ COPY examples/linx-indexer ./examples/linx-indexer
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release && \
-    cp /app/target/release/cli /app/cli && \
-    cp /app/target/release/points /app/points && \
-    cp /app/target/release/gap_detector /app/gap_detector && \
-    cp /app/target/release/snapshots /app/snapshots
+    mkdir -p /app/bins && \
+    find /app/target/release -maxdepth 1 -type f -executable -exec cp {} /app/bins/ \;
 
 
 RUN cargo install diesel_cli --no-default-features --features postgres
@@ -44,10 +42,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY --from=builder /app/cli /app/
-COPY --from=builder /app/points /app/
-COPY --from=builder /app/gap_detector /app/
-COPY --from=builder /app/snapshots /app/
+COPY --from=builder /app/bins/ /app/
 COPY --from=builder /app/examples/linx-indexer/migrations /app/migrations
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 
