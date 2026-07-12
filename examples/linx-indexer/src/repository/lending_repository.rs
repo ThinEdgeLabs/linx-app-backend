@@ -709,12 +709,117 @@ impl LendingRepository {
     ) -> Result<usize> {
         use schema::lending_position_snapshots::dsl::*;
         let mut conn = self.db_pool.get().await?;
-        let deleted = diesel::delete(
-            lending_position_snapshots.filter(timestamp.ge(day_start)).filter(timestamp.lt(day_end)),
+        let deleted =
+            diesel::delete(lending_position_snapshots.filter(timestamp.ge(day_start)).filter(timestamp.lt(day_end)))
+                .execute(&mut conn)
+                .await?;
+        Ok(deleted)
+    }
+
+    /// Start of the UTC day containing the oldest block, or `None` if the table is empty.
+    pub async fn oldest_block_day(&self) -> Result<Option<NaiveDateTime>> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
+            day: Option<NaiveDateTime>,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row = diesel::sql_query("SELECT date_trunc('day', MIN(timestamp))::timestamp AS day FROM blocks")
+            .get_result(&mut conn)
+            .await?;
+        Ok(row.day)
+    }
+
+    /// Cascade-delete raw chain data for the blocks in `[day_start, day_end)`, anchored on
+    /// `blocks.timestamp`. Children are removed before parents so no orphans are left behind:
+    /// events (via `tx_id -> transactions -> blocks`), then transactions (via `block_hash`),
+    /// then the blocks themselves. There are no FK constraints between these tables, so the
+    /// ordering is enforced here rather than by the database.
+    pub async fn delete_chain_data_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<ChainDataDeleted> {
+        let mut conn = self.db_pool.get().await?;
+
+        // Events carry no timestamp of their own; reach them through their transaction's block.
+        // Events whose transaction has a NULL block_hash are unreachable here and are left intact.
+        let events = diesel::sql_query(
+            "DELETE FROM events e \
+             WHERE EXISTS ( \
+                 SELECT 1 FROM transactions t \
+                 JOIN blocks b ON b.hash = t.block_hash \
+                 WHERE t.tx_hash = e.tx_id AND b.timestamp >= $1 AND b.timestamp < $2 \
+             )",
         )
+        .bind::<diesel::sql_types::Timestamp, _>(day_start)
+        .bind::<diesel::sql_types::Timestamp, _>(day_end)
         .execute(&mut conn)
         .await?;
+
+        let transactions = diesel::sql_query(
+            "DELETE FROM transactions t \
+             WHERE EXISTS ( \
+                 SELECT 1 FROM blocks b \
+                 WHERE b.hash = t.block_hash AND b.timestamp >= $1 AND b.timestamp < $2 \
+             )",
+        )
+        .bind::<diesel::sql_types::Timestamp, _>(day_start)
+        .bind::<diesel::sql_types::Timestamp, _>(day_end)
+        .execute(&mut conn)
+        .await?;
+
+        let blocks = diesel::sql_query("DELETE FROM blocks WHERE timestamp >= $1 AND timestamp < $2")
+            .bind::<diesel::sql_types::Timestamp, _>(day_start)
+            .bind::<diesel::sql_types::Timestamp, _>(day_end)
+            .execute(&mut conn)
+            .await?;
+
+        Ok(ChainDataDeleted { events, transactions, blocks })
+    }
+
+    /// Start of the UTC day containing the oldest account transaction, or `None` if empty.
+    pub async fn oldest_account_transaction_day(&self) -> Result<Option<NaiveDateTime>> {
+        #[derive(diesel::QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
+            day: Option<NaiveDateTime>,
+        }
+        let mut conn = self.db_pool.get().await?;
+        let row: Row =
+            diesel::sql_query("SELECT date_trunc('day', MIN(timestamp))::timestamp AS day FROM account_transactions")
+                .get_result(&mut conn)
+                .await?;
+        Ok(row.day)
+    }
+
+    /// Delete every account transaction in `[day_start, day_end)`. Returns rows deleted.
+    pub async fn delete_account_transactions_for_day(
+        &self,
+        day_start: NaiveDateTime,
+        day_end: NaiveDateTime,
+    ) -> Result<usize> {
+        use schema::account_transactions::dsl::*;
+        let mut conn = self.db_pool.get().await?;
+        let deleted =
+            diesel::delete(account_transactions.filter(timestamp.ge(day_start)).filter(timestamp.lt(day_end)))
+                .execute(&mut conn)
+                .await?;
         Ok(deleted)
+    }
+}
+
+/// Per-table row counts deleted by a single [`LendingRepository::delete_chain_data_for_day`] call.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ChainDataDeleted {
+    pub events: usize,
+    pub transactions: usize,
+    pub blocks: usize,
+}
+
+impl ChainDataDeleted {
+    pub fn total(&self) -> usize {
+        self.events + self.transactions + self.blocks
     }
 }
 
