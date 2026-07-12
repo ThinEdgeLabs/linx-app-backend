@@ -15,11 +15,8 @@ pub async fn create_test_pool() -> Arc<Pool<AsyncPgConnection>> {
     let database_url = format!("postgresql://{}:{}@{}:{}/{}", user, password, host, port, db);
 
     let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&database_url);
-    let pool = Pool::builder()
-        .max_size(2)
-        .build(config)
-        .await
-        .expect("Failed to create test DB pool. Is PostgreSQL running?");
+    let pool =
+        Pool::builder().max_size(2).build(config).await.expect("Failed to create test DB pool. Is PostgreSQL running?");
 
     Arc::new(pool)
 }

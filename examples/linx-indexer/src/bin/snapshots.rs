@@ -8,8 +8,8 @@ use linx_indexer::jobs::{PeriodicJob, run_job_forever};
 use linx_indexer::repository::LendingRepository;
 use linx_indexer::services::price::token_service::TokenService;
 use linx_indexer::services::{
-    DataRetentionCleanupService, MarketStateSnapshotService, PositionSnapshotRetentionService,
-    PositionSnapshotService, StatsSnapshotService,
+    DataRetentionCleanupService, MarketStateSnapshotService, PositionSnapshotRetentionService, PositionSnapshotService,
+    StatsSnapshotService,
 };
 
 #[tokio::main]
