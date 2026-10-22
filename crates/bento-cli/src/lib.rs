@@ -12,6 +12,7 @@ use bento_core::{
     Client, ProcessorFactory,
 };
 use bento_server::{start, AppState, Config as ServerConfig};
+use diesel_migrations::EmbeddedMigrations;
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 use utoipa_axum::router::OpenApiRouter;
 
@@ -56,6 +57,7 @@ pub fn get_network() -> Result<Network> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn new_worker_from_config(
     _config: &Config,
     processor_factories: &HashMap<String, ProcessorFactory>,
@@ -64,6 +66,7 @@ async fn new_worker_from_config(
     sync_options: Option<SyncOptions>,
     backfill_options: Option<BackfillOptions>,
     app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    migrations: &'static EmbeddedMigrations,
 ) -> Result<Worker> {
     let mut processors = Vec::new();
 
@@ -86,8 +89,17 @@ async fn new_worker_from_config(
 
     let network = get_network()?;
 
-    let worker =
-        Worker::new(processors, get_database_url()?, network, None, sync_options, backfill_options, workers).await?;
+    let worker = Worker::new(
+        processors,
+        get_database_url()?,
+        network,
+        None,
+        sync_options,
+        backfill_options,
+        workers,
+        migrations,
+    )
+    .await?;
     Ok(worker)
 }
 
@@ -96,6 +108,7 @@ pub async fn new_realtime_worker_from_config(
     processor_factories: &HashMap<String, ProcessorFactory>,
     include_default_processors: bool,
     app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    migrations: &'static EmbeddedMigrations,
 ) -> Result<Worker> {
     let workers: usize = 2;
     let step = config.worker.step;
@@ -110,6 +123,7 @@ pub async fn new_realtime_worker_from_config(
         Some(SyncOptions { step, backstep, request_interval }),
         None,
         app_config,
+        migrations,
     )
     .await
 }
@@ -121,6 +135,7 @@ pub async fn new_backfill_worker_from_config(
     processor_factories: &HashMap<String, ProcessorFactory>,
     include_default_processors: bool,
     app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    migrations: &'static EmbeddedMigrations,
 ) -> Result<Worker> {
     let workers = config.backfill.workers;
     let step = config.backfill.step;
@@ -135,6 +150,7 @@ pub async fn new_backfill_worker_from_config(
         None,
         Some(BackfillOptions { start_ts, stop_ts, step, backstep, request_interval }),
         app_config,
+        migrations,
     )
     .await
 }
@@ -191,6 +207,7 @@ pub async fn run_command(
     router: Option<OpenApiRouter<AppState>>,
     include_default_processors: bool,
     app_config: Option<Arc<dyn bento_types::config::AppConfigTrait>>,
+    migrations: &'static EmbeddedMigrations,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -216,6 +233,7 @@ pub async fn run_command(
                     &processor_factories,
                     include_default_processors,
                     app_config.clone(),
+                    migrations,
                 )
                 .await?;
 
@@ -233,6 +251,7 @@ pub async fn run_command(
                     &processor_factories,
                     include_default_processors,
                     app_config.clone(),
+                    migrations,
                 )
                 .await?;
 

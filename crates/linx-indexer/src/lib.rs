@@ -1,7 +1,10 @@
 use bento_core::ProcessorFactory;
 use bigdecimal::BigDecimal;
+use diesel_migrations::{EmbeddedMigrations, embed_migrations};
 use rand::RngCore;
 use std::collections::HashMap;
+
+pub static MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 pub mod config;
 pub mod constants;

@@ -10,6 +10,7 @@ use bento_types::{
     repository::{get_blocks_at_height, get_max_block_timestamp},
     BlockBatch, BlockRange, DEFAULT_GROUP_NUM,
 };
+use diesel_migrations::EmbeddedMigrations;
 
 use super::{fetch::fetch_parallel, pipeline::Pipeline};
 use std::{sync::Arc, time::Duration};
@@ -39,9 +40,11 @@ pub struct Worker {
     pub sync_opts: Option<SyncOptions>,
     pub backfill_opts: Option<BackfillOptions>,
     pub workers: usize,
+    pub migrations: &'static EmbeddedMigrations,
 }
 
 impl Worker {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         processor_configs: Vec<ProcessorConfig>,
         db_url: String,
@@ -50,6 +53,7 @@ impl Worker {
         sync_opts: Option<SyncOptions>,
         backfill_opts: Option<BackfillOptions>,
         workers: usize,
+        migrations: &'static EmbeddedMigrations,
     ) -> Result<Self> {
         let db_pool = new_db_pool(&db_url, db_pool_size).await?;
         Ok(Self {
@@ -60,6 +64,7 @@ impl Worker {
             backfill_opts,
             client: Arc::new(Client::new(network)),
             workers,
+            migrations,
         })
     }
 
@@ -316,6 +321,6 @@ impl Worker {
 
         tracing::info!("Running migrations: {:?}", self.db_url);
         let mut conn = PgConnection::establish(&self.db_url).expect("migrations failed!");
-        run_pending_migrations(&mut conn);
+        run_pending_migrations(&mut conn, self.migrations);
     }
 }

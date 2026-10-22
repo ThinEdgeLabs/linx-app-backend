@@ -1,4 +1,5 @@
 use linx_indexer::{
+    MIGRATIONS,
     config::AppConfig,
     get_processor_factories,
     routers::{AccountTransactionsRouter, LendingRouter, PointsRouter, StatsRouter, TransactionsRouter},
@@ -23,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(StatsRouter::register())
         .merge(TransactionsRouter::register());
 
-    bento_cli::run_command(processor_factories, Some(router), true, app_config).await?;
+    bento_cli::run_command(processor_factories, Some(router), true, app_config, &MIGRATIONS).await?;
 
     Ok(())
 }

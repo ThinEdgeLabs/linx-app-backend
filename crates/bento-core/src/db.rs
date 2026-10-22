@@ -1,4 +1,8 @@
-use diesel::ConnectionResult;
+use diesel::{
+    backend::Backend,
+    migration::{self, Migration, MigrationSource},
+    ConnectionResult,
+};
 use diesel_async::{
     pooled_connection::{
         bb8::{Pool, PooledConnection},
@@ -6,11 +10,10 @@ use diesel_async::{
     },
     AsyncPgConnection,
 };
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness};
 use futures_util::{future::BoxFuture, FutureExt};
 use std::{sync::Arc, time::Duration};
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../bento-types/migrations");
 pub const DEFAULT_MAX_POOL_SIZE: u32 = 150;
 
 // Database pool type aliases
@@ -86,7 +89,19 @@ pub async fn new_db_pool(database_url: &str, max_pool_size: Option<u32>) -> Resu
     Ok(Arc::new(pool))
 }
 
+// Diesel only accepts an owned migration source, and `EmbeddedMigrations` can't be cloned
+struct StaticMigrations(&'static EmbeddedMigrations);
+
+impl<DB: Backend> MigrationSource<DB> for StaticMigrations {
+    fn migrations(&self) -> migration::Result<Vec<Box<dyn Migration<DB>>>> {
+        MigrationSource::<DB>::migrations(self.0)
+    }
+}
+
 // Run pending migrations
-pub fn run_pending_migrations<DB: diesel::backend::Backend>(conn: &mut impl MigrationHarness<DB>) {
-    conn.run_pending_migrations(MIGRATIONS).expect("[Parser] Migrations failed!");
+pub fn run_pending_migrations<DB: Backend>(
+    conn: &mut impl MigrationHarness<DB>,
+    migrations: &'static EmbeddedMigrations,
+) {
+    conn.run_pending_migrations(StaticMigrations(migrations)).expect("[Parser] Migrations failed!");
 }

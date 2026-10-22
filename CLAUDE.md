@@ -13,14 +13,14 @@ The application lives in `crates/linx-indexer`. The `bento-*` crates are the ind
 Cargo workspace, every crate under `crates/`:
 
 - `linx-indexer` - The application: processors (transfers, dex, lending; a contract-call processor exists but isn't
-  registered), models, repositories, routers, services, binaries, migrations
-
-`config.toml` (runtime tuning) is at the repository root.
+  registered), models, repositories, routers, services, binaries, all database migrations
 - `bento-core` - Worker, block fetching client, pipeline, built-in block/event/transaction processors
 - `bento-cli` - CLI (`run worker | backfill | server`) and TOML config loading
 - `bento-server` - Axum server and Swagger UI
-- `bento-types` - Shared types, chain-data models, chain-data migrations
+- `bento-types` - Shared types, chain-data models
 - `bento-trait` - `ProcessorTrait`, `BlockProvider`
+
+`config.toml` (runtime tuning) is at the repository root.
 
 ## Building and Running
 
@@ -53,21 +53,22 @@ overrides the node URL.
 
 ### Migrations
 
-There are two migration sets:
+All migrations, chain-data and application, live in `crates/linx-indexer/migrations`. `linx-indexer` embeds them
+(`MIGRATIONS` in `src/lib.rs`) and passes them to the worker, which applies pending ones on startup (`run worker`,
+`run backfill`, `gap_detector`). The API server and other binaries don't run migrations.
 
-- `crates/bento-types/migrations` - chain-data tables (blocks, events, transactions, processor_status). Embedded in
-  `bento-core` and applied when the worker starts.
-- `crates/linx-indexer/migrations` - application tables. **Not** applied automatically; run with the Diesel CLI.
+The root `diesel.toml` points the Diesel CLI at that folder and regenerates `crates/linx-indexer/src/schema.rs`, so
+these work from the repository root without flags:
 
 ```bash
 set -a; source .env; set +a
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@${POSTGRES_HOST:-localhost}:${POSTGRES_PORT:-5432}/$POSTGRES_DB"
-diesel setup --migration-dir crates/bento-types/migrations
-diesel migration run --migration-dir crates/linx-indexer/migrations
+diesel migration generate <name>
+diesel migration run
 ```
 
-The root `diesel.toml` regenerates a stray `src/schema.rs` at the repo root on every run; the real schema is
-`crates/linx-indexer/src/schema.rs`.
+`crates/bento-types/src/schema.rs` is a hand-maintained subset (the chain-data tables plus `processor_status`) for
+the `bento-types` models; update it if a migration changes those tables.
 
 Never edit a migration that has already been applied in production; add a new one. Existing databases won't rerun
 it, so the edit only affects fresh databases and the two drift apart.

@@ -1,7 +1,7 @@
 use bento_cli::{get_database_url, get_network};
 use bento_core::new_db_pool;
 use bento_core::workers::worker::{BackfillOptions, SyncOptions, Worker};
-use linx_indexer::{config::AppConfig, get_processor_factories, services::GapDetectionService};
+use linx_indexer::{MIGRATIONS, config::AppConfig, get_processor_factories, services::GapDetectionService};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -105,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
                 Some(SyncOptions::default()),
                 Some(BackfillOptions::default()),
                 1,
+                &MIGRATIONS,
             )
             .await?;
 

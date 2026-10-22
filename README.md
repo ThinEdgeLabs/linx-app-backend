@@ -8,12 +8,12 @@ points endpoints.
 
 | Path | What it is |
 |---|---|
-| `crates/linx-indexer` | The application: processors, models, repositories, HTTP routers, services, binaries and migrations |
+| `crates/linx-indexer` | The application: processors, models, repositories, HTTP routers, services, binaries and all database migrations |
 | `config.toml` | Runtime tuning for the worker, backfill, server and points |
 | `crates/bento-core` | Block fetching from the Alephium node, the worker that runs processors, built-in block/event/transaction processors |
 | `crates/bento-cli` | Command-line entry point (`run worker`, `run backfill`, `run server`) and TOML config loading |
 | `crates/bento-server` | Axum server setup and Swagger UI |
-| `crates/bento-types` | Shared types, chain-data models and their migrations |
+| `crates/bento-types` | Shared types and chain-data models |
 | `crates/bento-trait` | `ProcessorTrait` and the block provider traits |
 
 The `bento-*` crates started as the [bento-alephium](https://github.com/ThinEdgeLabs/bento-alephium) indexing
@@ -21,22 +21,21 @@ framework; this repository no longer tracks it.
 
 ## Getting started
 
-Requirements: the Rust toolchain from `rust-toolchain.toml` (installed automatically by `rustup`), Docker, and
-the Diesel CLI (`cargo install diesel_cli --no-default-features --features postgres`).
+Requirements: the Rust toolchain from `rust-toolchain.toml` (installed automatically by `rustup`) and Docker.
 
 ```bash
 cp .env.example .env                 # then fill in the Linx values
 docker compose up -d db              # PostgreSQL only
 ```
 
-Apply migrations. Chain-data tables come from `bento-types`, application tables from `linx-indexer`; run them in
-this order:
+Migrations live in `crates/linx-indexer/migrations` and are applied automatically when the worker starts (`run
+worker` or `run backfill`). To apply them without starting the worker, use the Diesel CLI
+(`cargo install diesel_cli --no-default-features --features postgres`) from the repository root:
 
 ```bash
 set -a; source .env; set +a
 export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@${POSTGRES_HOST:-localhost}:${POSTGRES_PORT:-5432}/$POSTGRES_DB"
-diesel setup --migration-dir crates/bento-types/migrations
-diesel migration run --migration-dir crates/linx-indexer/migrations
+diesel setup
 ```
 
 ## Running
