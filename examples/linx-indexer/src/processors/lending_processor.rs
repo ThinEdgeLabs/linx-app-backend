@@ -74,7 +74,7 @@ impl ProcessorTrait for LendingProcessor {
         for block_events in &bwe {
             let block = block_events.block.clone();
             let block_events = self.extract_lending_events(block_events, &market_map);
-            tracing::info!(
+            tracing::debug!(
                 "Extracted {} lending events from block {} with hash {}",
                 block_events.len(),
                 block.height,
