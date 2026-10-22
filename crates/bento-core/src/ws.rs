@@ -36,8 +36,10 @@ use tokio_tungstenite::{
 pub struct WsClient;
 
 impl WsClient {
-    pub async fn connect_async(url: &str) -> Result<(ConnectionState<MaybeTlsStream<TcpStream>>, Response), Error> {
-        let (socket, response) = connect_async(url).await?;
+    pub async fn connect_async(
+        url: &str,
+    ) -> Result<(ConnectionState<MaybeTlsStream<TcpStream>>, Response), Box<Error>> {
+        let (socket, response) = connect_async(url).await.map_err(Box::new)?;
         Ok((ConnectionState::new(socket), response))
     }
 }
@@ -76,8 +78,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> ConnectionState<T> {
         self.send("block_notify", vec![]).await
     }
 
-    pub async fn close(mut self) -> Result<(), Error> {
-        self.socket.close(None).await
+    pub async fn close(mut self) -> Result<(), Box<Error>> {
+        self.socket.close(None).await.map_err(Box::new)
     }
 }
 
