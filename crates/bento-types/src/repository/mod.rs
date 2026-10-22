@@ -17,18 +17,15 @@ use anyhow::Result;
 use diesel::insert_into;
 use diesel::prelude::*;
 use diesel::ExpressionMethods;
-use diesel_async::{scoped_futures::ScopedFutureExt, AsyncConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 
 /// Insert block and events into the database.
 pub async fn insert_block_and_events(db: Arc<DbPool>, block: BlockModel, events: Vec<EventModel>) -> Result<()> {
     let mut conn = db.get().await?;
-    conn.transaction(|conn| {
-        async move {
-            insert_into(crate::schema::blocks::table).values(&block).execute(conn).await?;
-            insert_into(crate::schema::events::table).values(&events).execute(conn).await?;
-            diesel::result::QueryResult::Ok(())
-        }
-        .scope_boxed()
+    conn.transaction(async move |conn| {
+        insert_into(crate::schema::blocks::table).values(&block).execute(conn).await?;
+        insert_into(crate::schema::events::table).values(&events).execute(conn).await?;
+        diesel::result::QueryResult::Ok(())
     })
     .await?;
     Ok(())
@@ -85,21 +82,18 @@ pub async fn update_main_chain_status(db: Arc<DbPool>, block_hashes: Vec<String>
         return Ok(());
     }
     for block_hash in block_hashes {
-        conn.transaction(|conn| {
-            async move {
-                diesel::update(crate::schema::blocks::table.filter(crate::schema::blocks::hash.eq(block_hash.clone())))
-                    .set(crate::schema::blocks::main_chain.eq(main_chain))
-                    .execute(conn)
-                    .await?;
-                diesel::update(
-                    crate::schema::transactions::table.filter(crate::schema::transactions::block_hash.eq(block_hash)),
-                )
-                .set(crate::schema::transactions::main_chain.eq(main_chain))
+        conn.transaction(async move |conn| {
+            diesel::update(crate::schema::blocks::table.filter(crate::schema::blocks::hash.eq(block_hash.clone())))
+                .set(crate::schema::blocks::main_chain.eq(main_chain))
                 .execute(conn)
                 .await?;
-                diesel::result::QueryResult::Ok(())
-            }
-            .scope_boxed()
+            diesel::update(
+                crate::schema::transactions::table.filter(crate::schema::transactions::block_hash.eq(block_hash)),
+            )
+            .set(crate::schema::transactions::main_chain.eq(main_chain))
+            .execute(conn)
+            .await?;
+            diesel::result::QueryResult::Ok(())
         })
         .await?;
     }

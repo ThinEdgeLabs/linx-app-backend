@@ -366,10 +366,10 @@ mod tests {
     #[test]
     fn test_hash_display() {
         let hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(format!("{}", hash), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
+        assert_eq!(hash.to_string(), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
 
         let block_hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(format!("{}", block_hash), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
+        assert_eq!(block_hash.to_string(), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
     }
     #[test]
     fn test_block_entry_deser() {

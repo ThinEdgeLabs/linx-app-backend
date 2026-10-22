@@ -31,7 +31,6 @@ tokio-postgres.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 bigdecimal.workspace = true
-diesel-enum.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
 dotenv.workspace = true
