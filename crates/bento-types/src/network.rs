@@ -126,6 +126,7 @@ mod network_tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_base_url_with_env_vars() {
         cleanup_env_vars();
 
@@ -180,6 +181,7 @@ mod network_tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_network_default() {
         cleanup_env_vars();
 

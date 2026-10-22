@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["crates/*", "examples/*"]
+members = ["crates/*"]
 
 [workspace.package]
 authors = ["Your Name <your.email@example.com>"]

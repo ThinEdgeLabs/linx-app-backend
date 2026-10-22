@@ -16,10 +16,9 @@ RUN apt-get update && \
 
 COPY Cargo.toml Cargo.lock ./
 
-RUN mkdir -p crates examples
+RUN mkdir -p crates
 
 COPY crates/ ./crates/
-COPY examples/linx-indexer ./examples/linx-indexer
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
@@ -43,7 +42,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY --from=builder /app/bins/ /app/
-COPY --from=builder /app/examples/linx-indexer/migrations /app/migrations
+COPY --from=builder /app/crates/linx-indexer/migrations /app/migrations
 COPY --from=builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 
 WORKDIR /app

@@ -28,3 +28,6 @@ native-tls.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 reqwest-retry.workspace = true
+
+[dev-dependencies]
+serial_test = "3.4.0"

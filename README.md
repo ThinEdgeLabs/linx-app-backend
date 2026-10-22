@@ -1,272 +1,77 @@
-# Bento Alephium - Custom Blockchain Data Processor Framework
+# Linx App Backend
 
-This framework allows you to create custom processors for indexing and processing Alephium blockchain data. The framework provides a flexible architecture for handling different types of blockchain events and storing them in a PostgreSQL database using Diesel ORM.
+Indexer and REST API behind the Linx app. It follows the Alephium blockchain, indexes transfers, DEX swaps
+(Ayin, Elexium, PowFi) and lending activity into PostgreSQL, and serves account history, lending, stats and
+points endpoints.
 
-## Example: Lending Marketplace Processor
+## Repository layout
 
-The Lending Marketplace Processor demonstrates how to create a custom processor that tracks lending contract events. It processes two types of events:
+| Path | What it is |
+|---|---|
+| `crates/linx-indexer` | The application: processors, models, repositories, HTTP routers, services, binaries and migrations |
+| `config.toml` | Runtime tuning for the worker, backfill, server and points |
+| `crates/bento-core` | Block fetching from the Alephium node, the worker that runs processors, built-in block/event/transaction processors |
+| `crates/bento-cli` | Command-line entry point (`run worker`, `run backfill`, `run server`) and TOML config loading |
+| `crates/bento-server` | Axum server setup and Swagger UI |
+| `crates/bento-types` | Shared types, chain-data models and their migrations |
+| `crates/bento-trait` | `ProcessorTrait` and the block provider traits |
 
-1. Loan Actions (Create, Cancel, Pay, Accept, Liquidate)
-2. Loan Details (lending and collateral information)
+The `bento-*` crates started as the [bento-alephium](https://github.com/ThinEdgeLabs/bento-alephium) indexing
+framework; this repository no longer tracks it.
 
-### Core Components
+## Getting started
 
-1. **Data Models**: Database tables represented as Rust structs using Diesel ORM
+Requirements: the Rust toolchain from `rust-toolchain.toml` (installed automatically by `rustup`), Docker, and
+the Diesel CLI (`cargo install diesel_cli --no-default-features --features postgres`).
 
-   - `LoanActionModel`: Tracks loan lifecycle events
-   - `LoanDetailModel`: Stores loan terms and conditions
-
-2. **Custom Output Type**: Define how processor output is handled
-
-   ```rust
-   #[derive(Debug, Clone)]
-   pub struct LendingContractOutput {
-       pub loan_actions: Vec<LoanActionModel>,
-       pub loan_details: Vec<LoanDetailModel>,
-   }
-
-   impl CustomProcessorOutput for LendingContractOutput {
-       fn as_any(&self) -> &dyn std::any::Any {
-           self
-       }
-
-       fn clone_box(&self) -> Box<dyn CustomProcessorOutput> {
-           Box::new(self.clone())
-       }
-   }
-   ```
-
-3. **Event Types**: Enumeration of supported contract events
-   ```rust
-   #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, DbEnum, Serialize, AsExpression)]
-   #[diesel(sql_type = SmallInt)]
-   pub enum LoanActionType {
-       LoanCreated,
-       LoanCancelled,
-       LoanPaid,
-       LoanAccepted,
-       LoanLiquidated,
-   }
-   ```
-
-### Implementation Guide
-
-1. **Define Your Data Models**
-
-```rust
-#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, AsChangeset)]
-#[diesel(table_name = schema::loan_actions)]
-pub struct LoanActionModel {
-    loan_subcontract_id: String,
-    loan_id: Option<BigDecimal>,
-    by: String,
-    timestamp: NaiveDateTime,
-    action_type: LoanActionType,
-}
-
-#[derive(Queryable, Selectable, Insertable, Debug, Clone, Serialize, AsChangeset)]
-#[diesel(table_name = schema::loan_details)]
-pub struct LoanDetailModel {
-    loan_subcontract_id: String,
-    lending_token_id: String,
-    collateral_token_id: String,
-    lending_amount: BigDecimal,
-    collateral_amount: BigDecimal,
-    interest_rate: BigDecimal,
-    duration: BigDecimal,
-    lender: String,
-}
+```bash
+cp .env.example .env                 # then fill in the Linx values
+docker compose up -d db              # PostgreSQL only
 ```
 
-2. **Create Your Processor**
+Apply migrations. Chain-data tables come from `bento-types`, application tables from `linx-indexer`; run them in
+this order:
 
-```rust
-pub struct LendingContractProcessor {
-    connection_pool: Arc<DbPool>,
-    contract_address: String,
-}
-
-impl LendingContractProcessor {
-    pub fn new(connection_pool: Arc<DbPool>, contract_address: String) -> Self {
-        Self { connection_pool, contract_address }
-    }
-}
-
-#[async_trait]
-impl ProcessorTrait for LendingContractProcessor {
-    fn name(&self) -> &'static str {
-        "lending_contract_processor"
-    }
-
-    fn connection_pool(&self) -> &Arc<DbPool> {
-        &self.connection_pool
-    }
-
-    async fn process_blocks(
-        &self,
-        _from: i64,
-        _to: i64,
-        blocks: Vec<BlockAndEvents>,
-    ) -> Result<ProcessorOutput> {
-        // Process blocks and convert to models
-        let (loan_actions, loan_details) = convert_to_model(blocks, &self.contract_address);
-
-        tracing::info!(
-            "Processed {} loan actions and {} loan details",
-            loan_actions.len(),
-            loan_details.len()
-        );
-
-        // Return custom output
-        Ok(ProcessorOutput::Custom(Arc::new(LendingContractOutput {
-            loan_actions,
-            loan_details
-        })))
-    }
-
-    // Override storage method to handle custom output
-    async fn store_output(&self, output: ProcessorOutput) -> Result<()> {
-        if let ProcessorOutput::Custom(custom) = output {
-            if let Some(lending_output) = custom.as_any().downcast_ref::<LendingContractOutput>() {
-                // Store loan actions
-                if !lending_output.loan_actions.is_empty() {
-                    insert_loan_actions_to_db(
-                        self.connection_pool.clone(),
-                        lending_output.loan_actions.clone()
-                    ).await?;
-                }
-
-                // Store loan details
-                if !lending_output.loan_details.is_empty() {
-                    insert_loan_details_to_db(
-                        self.connection_pool.clone(),
-                        lending_output.loan_details.clone()
-                    ).await?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
+```bash
+set -a; source .env; set +a
+export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@${POSTGRES_HOST:-localhost}:${POSTGRES_PORT:-5432}/$POSTGRES_DB"
+diesel setup --migration-dir crates/bento-types/migrations
+diesel migration run --migration-dir crates/linx-indexer/migrations
 ```
 
-3. **Create Factory Function and Register Processor**
+## Running
 
-The factory function is a crucial part that creates and configures your processor. It's used by the worker to instantiate your processor with the correct configuration:
+Run from the repository root. Tuning parameters are in `config.toml`, which every mode and binary reads from the
+current directory (pass `-c` / `--config-path` to the `cli` binary to use another file). Addresses and other
+secrets come from `.env`, not the config file.
 
-```rust
-// Factory function that creates your processor instance
-fn register_lending_contract(
-    pool: Arc<DbPool>,
-    args: Option<serde_json::Value>
-) -> Box<dyn ProcessorTrait> {
-    // Extract contract address from args
-    let contract_address = if let Some(args) = args {
-        args.get("contract_address")
-            .and_then(|v| v.as_str())
-            .unwrap()
-            .to_string()
-    } else {
-        panic!("Missing contract address argument")
-    };
+```bash
+# Follow the chain
+cargo run -p linx-indexer --bin cli -- run worker
 
-    // Create and return the processor
-    Box::new(LendingContractProcessor::new(pool, contract_address))
-}
+# Index a historical range (timestamps in milliseconds)
+cargo run -p linx-indexer --bin cli -- run backfill --start <ms> --stop <ms>
 
-// Register the processor with the worker
-let processor_config = ProcessorConfig::Custom {
-    name: "lending processor".to_string(),
-    factory: register_lending_contract,  // Pass the factory function
-    args: Some(serde_json::json!({
-        "contract_address": "yuF1Sum4ricLFBc86h3RdjFsebR7ZXKBHm2S5sZmVsiF"
-    }))
-};
-
-// Create worker with the processor
-let worker = Worker::new(
-    vec![processor_config],  // Can register multiple processors
-    database_url,
-    Network::Testnet,
-    None,
-    Some(SyncOptions {
-        start_ts: Some(1716560632750),
-        step: Some(1800000 * 10),
-    }),
-    Some(FetchStrategy::Parallel { num_workers: 10 }),
-).await?;
+# REST API, with Swagger UI at /swagger-ui
+cargo run -p linx-indexer --bin cli -- run server
 ```
 
-The factory function pattern allows for:
+Other binaries in `crates/linx-indexer/src/bin`:
 
-- Dynamic processor creation based on configuration
-- Dependency injection (database pool)
-- Configuration validation at startup
-- Multiple processor instances with different configurations
-- Clean separation between processor creation and usage
+- `snapshots`: lending position and market snapshots, plus data retention cleanup
+- `points`: points calculation
+- `gap_detector`: finds and re-indexes missing blocks
 
-### Running the Processor
+## Testing
 
-```rust
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenvy::dotenv().ok();
-    tracing_subscriber::fmt().init();
-
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let processor_config = ProcessorConfig::Custom {
-        name: "lending processor".to_string(),
-        factory: register_lending_contract,
-        args: Some(serde_json::json!({
-            "contract_address": "yuF1Sum4ricLFBc86h3RdjFsebR7ZXKBHm2S5sZmVsiF"
-        }))
-    };
-
-    let worker = Worker::new(
-        vec![processor_config],
-        database_url,
-        Network::Testnet,
-        None,
-        Some(SyncOptions {
-            start_ts: Some(1716560632750),
-            step: Some(1800000 * 10), // Process blocks in 5-hour chunks
-        }),
-        Some(FetchStrategy::Parallel { num_workers: 10 }),
-    ).await?;
-
-    worker.run().await?;
-    Ok(())
-}
+```bash
+cargo test                          # unit tests, no database needed (what CI runs)
+cargo test -- --ignored             # database tests, need PostgreSQL from .env
+cargo clippy --all-targets --all-features
 ```
 
-### Best Practices
+## Deployment
 
-1. **Event Processing**
-
-   - Validate event field count before processing
-   - Use proper type conversion with error handling
-   - Filter events by contract address
-   - Handle different event types appropriately
-
-2. **Custom Output Handling**
-
-   - Implement `CustomProcessorOutput` trait for your output type
-   - Use `ProcessorOutput::Custom` to wrap your output
-   - Override `store_output` to handle custom data storage
-   - Use proper type downcasting with error handling
-
-3. **Error Handling**
-
-   - Use custom error types for specific failures
-   - Implement comprehensive logging
-   - Handle all potential error cases
-   - Validate input data thoroughly
-
-4. **Configuration**
-   - Use environment variables for database configuration
-   - Pass contract address through processor args
-   - Configure appropriate sync options
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+`docker-compose.yml` runs the full stack locally (`task up` / `task down` via `Taskfile.yml`).
+Production uses `docker-compose.prod.yml` driven by the `Makefile`, e.g. `make deploy VERSION=1.12.0`; run
+`make help` for the other targets.

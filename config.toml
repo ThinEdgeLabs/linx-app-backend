@@ -5,9 +5,9 @@ backstep = 30000
 
 [backfill]
 workers = 2
-request_interval = 100 # 5 seconds
+request_interval = 100
 step = 30000
-backstep = 30000       # 1 minute backstep
+backstep = 30000
 
 [server]
 

@@ -17,10 +17,9 @@ RUN apt-get update && \
 COPY Cargo.toml Cargo.lock ./
 
 # Create directory structure for workspace
-RUN mkdir -p crates examples
+RUN mkdir -p crates
 
 COPY crates/ ./crates/
-COPY examples/linx-indexer ./examples/linx-indexer
 
 # Build binaries to cache dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

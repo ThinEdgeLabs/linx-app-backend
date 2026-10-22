@@ -42,7 +42,7 @@ services:
         condition: service_healthy
     restart: on-failure
     volumes:
-      - ./examples/linx-indexer/config.toml:/app/config.toml
+      - ./config.toml:/app/config.toml
     networks:
       - bento-network
 
@@ -61,8 +61,8 @@ services:
       - "8080:8080"
     restart: on-failure
     volumes:
-      - ./examples/linx-indexer/config.toml:/app/config.toml
-      - ./examples/linx-indexer/assets/:/app/assets/:ro
+      - ./config.toml:/app/config.toml
+      - ./crates/linx-indexer/assets/:/app/assets/:ro
     networks:
       - bento-network
 
@@ -78,9 +78,9 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./examples/linx-indexer/config.toml:/app/config.toml
-      - ./examples/linx-indexer/migrations:/app/migrations
-      - ./examples/linx-indexer/src/schema.rs:/app/src/schema.rs
+      - ./config.toml:/app/config.toml
+      - ./crates/linx-indexer/migrations:/app/migrations
+      - ./crates/linx-indexer/src/schema.rs:/app/src/schema.rs
     networks:
       - bento-network
 
