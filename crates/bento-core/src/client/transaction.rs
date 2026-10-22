@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_trait::stage::TransactionProvider;
+use bento_types::traits::stage::TransactionProvider;
 use bento_types::Transaction;
 use serde::Deserialize;
 use url::Url;

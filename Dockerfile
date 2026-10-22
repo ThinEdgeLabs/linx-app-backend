@@ -46,5 +46,8 @@ WORKDIR /app
 # Copy binaries from workspace target directory
 COPY --from=builder /app/cli /app/
 
+# Share image backgrounds, read from assets/ relative to the working directory
+COPY assets/ /app/assets/
+
 # Default command will be overridden in docker-compose.yml
 CMD ["./cli"]

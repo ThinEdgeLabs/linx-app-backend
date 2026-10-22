@@ -4,7 +4,7 @@ use crate::{
     db::{new_db_pool, DbPool},
 };
 use anyhow::Result;
-use bento_trait::stage::BlockProvider;
+use bento_types::traits::stage::BlockProvider;
 use bento_types::{
     network::Network,
     repository::{get_blocks_at_height, get_max_block_timestamp},

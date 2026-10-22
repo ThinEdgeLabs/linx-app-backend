@@ -5,6 +5,7 @@ pub mod network;
 pub mod processors;
 pub mod repository;
 pub mod schema;
+pub mod traits;
 pub mod utils;
 
 use std::fmt::Debug;
@@ -362,15 +363,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Tests the display functionality for Hash and BlockHash types.
-    #[test]
-    fn test_hash_display() {
-        let hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(hash.to_string(), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
-
-        let block_hash = "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850".to_string();
-        assert_eq!(block_hash.to_string(), "00000000000006f8c2bcaac93c5a23df8fba7119ba139d80a49d0303bbf84850");
-    }
     #[test]
     fn test_block_entry_deser() {
         let json_data = json!({

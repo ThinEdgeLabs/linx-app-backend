@@ -14,7 +14,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bento_password}
       POSTGRES_DB: ${POSTGRES_DB:-bento_db}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - /mnt/volume_linx_app_backend_data/pgdata:/var/lib/postgresql/data
     healthcheck:
       test:
         [
@@ -56,18 +56,24 @@ services:
     restart: on-failure
     volumes:
       - ./config.toml:/app/config.toml
-      - ./crates/linx-indexer/assets/:/app/assets/:ro
     networks:
       - bento-network
       - traefik
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik"
-      - "traefik.http.routers.linx-app-api.rule=Host(`api.linxlabs.org`) && (PathPrefix(`/history`) || PathPrefix(`/lending`) || PathPrefix(`/points`) || PathPrefix(`/transactions`))"
+      - "traefik.http.routers.linx-app-api.rule=(Host(`api.linxlabs.org`) && (PathPrefix(`/history`) || PathPrefix(`/lending`) || PathPrefix(`/points`) || PathPrefix(`/transactions`) || PathPrefix(`/stats`))) || (Host(`bento-alephium.linxlabs.org`) && PathPrefix(`/v1/health`))"
       - "traefik.http.routers.linx-app-api.entrypoints=websecure"
       - "traefik.http.services.linx-app-api.loadbalancer.server.port=8080"
       - "traefik.http.routers.linx-app-api.tls.certresolver=cfresolver"
       - "traefik.http.routers.linx-app-api.service=linx-app-api"
+      - "traefik.http.middlewares.linx-api-rate-limit.ratelimit.sourcecriterion.requestheadername=CF-Connecting-IP"
+      - "traefik.http.middlewares.linx-api-rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.linx-api-rate-limit.ratelimit.burst=200"
+      - "traefik.http.middlewares.linx-api-rate-limit.ratelimit.period=1s"
+      # - "traefik.http.middlewares.linx-api-rate-limit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+      - "traefik.http.middlewares.linx-api-inflight.inflightreq.amount=200"
+      - "traefik.http.routers.linx-app-api.middlewares=linx-api-rate-limit,linx-api-inflight"
 
   cli:
     image: registry.digitalocean.com/linx-labs/linx-app-backend-cli:${VERSION:-latest}
@@ -88,12 +94,3 @@ networks:
   traefik:
     external: true
     name: traefik
-
-volumes:
-  postgres_data:
-  db_data:
-    driver: local
-    driver_opts:
-      type: none
-      device: /mnt/volume_linx_app_backend/postgres-data/
-      o: bind

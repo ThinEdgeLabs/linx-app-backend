@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use bento_types::{
+use crate::{
     BlockAndEvents, BlockEntry, BlockHeaderEntry, BlocksAndEventsPerTimestampRange, BlocksPerTimestampRange,
     CallContractParams, CallContractResult, ChainInfo, StageMessage, Transaction,
 };

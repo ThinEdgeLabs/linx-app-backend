@@ -7,7 +7,7 @@ use std::{fmt::Debug, str::FromStr};
 use async_trait::async_trait;
 use bento_core::ProcessorFactory;
 use bento_core::db::DbPool;
-use bento_trait::processor::ProcessorTrait;
+use bento_types::traits::processor::ProcessorTrait;
 use bento_types::{BlockAndEvents, processors::ProcessorOutput, utils::timestamp_millis_to_naive_datetime};
 use bigdecimal::BigDecimal;
 

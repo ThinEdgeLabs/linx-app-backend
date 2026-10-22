@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_trait::stage::ContractsProvider;
+use bento_types::traits::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResult, ContractState};
 use url::Url;
 

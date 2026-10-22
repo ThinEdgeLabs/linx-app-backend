@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use bento_trait::processor::{new_processor, DynProcessor, ProcessorTrait};
 use bento_types::config::AppConfigTrait;
+use bento_types::traits::processor::{new_processor, DynProcessor, ProcessorTrait};
 
 use crate::db::DbPool;
 

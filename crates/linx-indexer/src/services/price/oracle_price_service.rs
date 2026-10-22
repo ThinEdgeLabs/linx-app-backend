@@ -1,6 +1,6 @@
 use anyhow::Context;
 use bento_core::Client;
-use bento_trait::stage::ContractsProvider;
+use bento_types::traits::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, network::Network};
 use bigdecimal::BigDecimal;
 use std::collections::HashMap;

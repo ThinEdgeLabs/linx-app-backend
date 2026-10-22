@@ -112,31 +112,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    loan_actions (id) {
-        id -> Int4,
-        loan_subcontract_id -> Varchar,
-        loan_id -> Nullable<Numeric>,
-        by -> Varchar,
-        timestamp -> Timestamp,
-        action_type -> Int2,
-    }
-}
-
-diesel::table! {
-    loan_details (id) {
-        id -> Int4,
-        loan_subcontract_id -> Varchar,
-        lending_token_id -> Varchar,
-        collateral_token_id -> Varchar,
-        lending_amount -> Numeric,
-        collateral_amount -> Numeric,
-        interest_rate -> Numeric,
-        duration -> Numeric,
-        lender -> Varchar,
-    }
-}
-
-diesel::table! {
     market_state_snapshots (id) {
         id -> Int4,
         market_id -> Text,
@@ -276,8 +251,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     lending_position_snapshots,
     lending_stats_snapshots,
     linx_transactions,
-    loan_actions,
-    loan_details,
     market_state_snapshots,
     points_config,
     points_multipliers,

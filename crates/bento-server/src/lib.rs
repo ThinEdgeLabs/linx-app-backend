@@ -2,7 +2,7 @@ use crate::error::AppError;
 use anyhow::Result;
 use axum::{extract::State, response::IntoResponse, routing::get};
 use bento_core::Client;
-use bento_trait::stage::BlockProvider;
+use bento_types::traits::stage::BlockProvider;
 use bento_types::{repository::get_latest_block, ChainInfo, DbPool};
 use handler::{BlockApiModule, EventApiModule, TransactionApiModule};
 use serde::{Deserialize, Serialize};

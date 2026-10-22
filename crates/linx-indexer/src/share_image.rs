@@ -174,12 +174,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires share_background.svg asset"]
+    #[serial_test::serial]
     fn test_generate_share_image() {
         unsafe {
             std::env::set_var(
                 "SHARE_TEMPLATE_PATH",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/share_background.svg"),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/share_background.svg"),
             );
         }
         let result = generate_share_image(65992, "CLEAN-RAVEN-730", ImageFormat::Portrait, true);
@@ -190,12 +190,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires share_background_no_referral.svg asset"]
+    #[serial_test::serial]
     fn test_generate_share_image_no_referral() {
         unsafe {
             std::env::set_var(
                 "SHARE_TEMPLATE_NO_REFERRAL_PATH",
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/share_background_no_referral.svg"),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/share_background_no_referral.svg"),
             );
         }
         let result = generate_share_image(65992, "CLEAN-RAVEN-730", ImageFormat::Portrait, false);

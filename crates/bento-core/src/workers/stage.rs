@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use bento_trait::{processor::DynProcessor, stage::StageHandler};
+use bento_types::traits::{processor::DynProcessor, stage::StageHandler};
 use bento_types::{DbPool, StageMessage};
 
 pub struct ProcessorStage {

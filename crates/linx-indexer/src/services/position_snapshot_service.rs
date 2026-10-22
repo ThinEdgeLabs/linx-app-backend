@@ -6,7 +6,7 @@ use crate::{models::MarketState, random_tx_id, repository::LendingRepository};
 use anyhow::Context;
 use async_trait::async_trait;
 use bento_core::{Client, DbPool};
-use bento_trait::stage::ContractsProvider;
+use bento_types::traits::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, utils::timestamp_millis_to_naive_datetime};
 use bigdecimal::{BigDecimal, ToPrimitive, Zero};
 use std::sync::Arc;

@@ -299,10 +299,6 @@ mod tests {
             workers = 2
             step = 1800000
             backstep = 600000
-
-            [processors.custom_processor]
-            field1 = "value1"
-            field2 = 42
         "#;
 
         let config_path = create_test_config_file(temp_dir.path(), config_content);
@@ -319,14 +315,6 @@ mod tests {
         assert_eq!(config.backfill.step, 1800000);
         assert_eq!(config.backfill.request_interval, 1000);
         assert_eq!(config.backfill.workers, 2);
-
-        // Check that the processors were loaded
-        assert!(config.processors.is_some());
-        let processors = config.processors.unwrap();
-        assert!(processors.processors.contains_key("custom_processor"));
-        let custom_processor = &processors.processors["custom_processor"];
-        assert_eq!(custom_processor.config["field1"], serde_json::json!("value1"));
-        assert_eq!(custom_processor.config["field2"], serde_json::json!(42));
     }
 
     #[test]

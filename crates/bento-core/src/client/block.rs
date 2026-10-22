@@ -1,4 +1,4 @@
-use bento_trait::stage::BlockProvider;
+use bento_types::traits::stage::BlockProvider;
 use bento_types::{
     BlockAndEvents, BlockEntry, BlockHashesResponse, BlockHeaderEntry, BlocksAndEventsPerTimestampRange,
     BlocksPerTimestampRange, ChainInfo,

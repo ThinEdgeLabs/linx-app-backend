@@ -62,7 +62,6 @@ services:
     restart: on-failure
     volumes:
       - ./config.toml:/app/config.toml
-      - ./crates/linx-indexer/assets/:/app/assets/:ro
     networks:
       - bento-network
 

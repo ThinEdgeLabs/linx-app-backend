@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -68,8 +66,6 @@ pub struct Config {
     pub worker: WorkerConfig,
     pub server: ServerConfig,
     pub backfill: BackfillConfig,
-    pub processors: Option<ProcessorsConfig>,
-    pub price_service: Option<PriceServiceConfig>,
     pub points: Option<PointsConfig>,
 }
 
@@ -89,23 +85,6 @@ pub struct BackfillConfig {
     pub backstep: u64,
     pub request_interval: u64,
     pub workers: usize,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProcessorsConfig {
-    #[serde(flatten)]
-    pub processors: HashMap<String, ProcessorTypeConfig>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProcessorTypeConfig {
-    #[serde(flatten)]
-    pub config: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PriceServiceConfig {
-    pub linx_api_url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

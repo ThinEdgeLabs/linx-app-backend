@@ -4,3 +4,9 @@
 
 .vscode
 .idea
+
+# Database dumps (`make backup` writes backup-<timestamp>.sql to the repository root)
+/backup-*
+*.sql.gz
+*.sql.tar.gz
+*.dump

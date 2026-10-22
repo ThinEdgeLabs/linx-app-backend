@@ -30,31 +30,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    loan_actions (id) {
-        id -> Int4,
-        loan_subcontract_id -> Varchar,
-        loan_id -> Nullable<Numeric>,
-        by -> Varchar,
-        timestamp -> Timestamp,
-        action_type -> Int2,
-    }
-}
-
-diesel::table! {
-    loan_details (id) {
-        id -> Int4,
-        loan_subcontract_id -> Varchar,
-        lending_token_id -> Varchar,
-        collateral_token_id -> Varchar,
-        lending_amount -> Numeric,
-        collateral_amount -> Numeric,
-        interest_rate -> Numeric,
-        duration -> Numeric,
-        lender -> Varchar,
-    }
-}
-
-diesel::table! {
     processor_status (processor) {
         #[max_length = 50]
         processor -> Varchar,
@@ -78,11 +53,4 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(
-    blocks,
-    events,
-    loan_actions,
-    loan_details,
-    processor_status,
-    transactions,
-);
+diesel::allow_tables_to_appear_in_same_query!(blocks, events, processor_status, transactions);

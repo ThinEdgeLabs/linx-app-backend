@@ -17,10 +17,10 @@ Cargo workspace, every crate under `crates/`:
 - `bento-core` - Worker, block fetching client, pipeline, built-in block/event/transaction processors
 - `bento-cli` - CLI (`run worker | backfill | server`) and TOML config loading
 - `bento-server` - Axum server and Swagger UI
-- `bento-types` - Shared types, chain-data models
-- `bento-trait` - `ProcessorTrait`, `BlockProvider`
+- `bento-types` - Shared types, chain-data models, `ProcessorTrait` and the block provider traits (`traits/`)
 
-`config.toml` (runtime tuning) is at the repository root.
+`config.toml` (runtime tuning) and `assets/` (share image backgrounds, baked into the API image) are at the
+repository root. Both are read relative to the current directory, so run binaries from the root.
 
 ## Building and Running
 
@@ -98,7 +98,7 @@ share the environment.
 
 ### Processor System
 
-All processors implement `ProcessorTrait` (`bento-trait/src/processor.rs`):
+All processors implement `ProcessorTrait` (`bento-types/src/traits/processor.rs`):
 
 ```rust
 #[async_trait]
@@ -110,9 +110,9 @@ pub trait ProcessorTrait: Send + Sync + Debug + 'static {
 }
 ```
 
-Application processors are registered in `get_processor_factories()` in `crates/linx-indexer/src/lib.rs` and
-configured under `[processors.<name>]` in the TOML config (passed to the factory). Processors that output several
-model types use `ProcessorOutput::Custom` and downcast in `store_output()`.
+Application processors are registered in `get_processor_factories()` in `crates/linx-indexer/src/lib.rs`. Each
+factory receives the `AppConfig` loaded from the environment. Processors that output several model types use
+`ProcessorOutput::Custom` and downcast in `store_output()`.
 
 ### Configuration
 
@@ -120,12 +120,9 @@ model types use `ProcessorOutput::Custom` and downcast in `store_output()`.
 (`crates/linx-indexer/src/config.rs`).
 
 - `[worker]` - Sync intervals, step sizes
-- `[server]` - API port
+- `[server]` - Required but empty; the API host and port come from `API_HOST` / `API_PORT`
 - `[backfill]` - Worker count and intervals for historical sync
 - `[points]` - Referral percentage, signup bonus, daily calculation time
-
-The loader also accepts `[processors.{name}]` (passed to processor factories) and `[price_service]`, but the Linx
-processors and services don't read them.
 
 ### Alephium-Specific Concepts
 
@@ -139,7 +136,7 @@ processors and services don't read them.
 1. Create it in `crates/linx-indexer/src/processors/`
 2. Add models in `src/models/` and tables in `src/schema.rs`
 3. Add a migration under `crates/linx-indexer/migrations/`
-4. Register the factory in `get_processor_factories()` and add a config section
+4. Register the factory in `get_processor_factories()`; add any settings it needs to `AppConfig` and `.env.example`
 5. Test with a backfill over a small timestamp range
 
 ## Common Patterns

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_trait::processor::ProcessorTrait;
+use bento_types::traits::processor::ProcessorTrait;
 use bento_types::{
     convert_bwe_to_tx_models, processors::ProcessorOutput, repository::insert_txs_to_db, BlockAndEvents,
 };

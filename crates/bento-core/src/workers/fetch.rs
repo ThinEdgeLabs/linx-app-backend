@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use anyhow::Result;
-use bento_trait::stage::BlockProvider;
+use bento_types::traits::stage::BlockProvider;
 use futures::{stream::FuturesOrdered, StreamExt};
 
 use bento_types::{BlockAndEvents, BlockBatch, BlockRange, MAX_TIMESTAMP_RANGE};

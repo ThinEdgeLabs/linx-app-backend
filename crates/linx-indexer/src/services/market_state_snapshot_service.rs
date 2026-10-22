@@ -7,7 +7,7 @@ use crate::services::price::token_service::TokenService;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bento_core::{Client, DbPool};
-use bento_trait::stage::ContractsProvider;
+use bento_types::traits::stage::ContractsProvider;
 use bento_types::{CallContractParams, CallContractResultType, network::Network};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, NaiveDateTime};

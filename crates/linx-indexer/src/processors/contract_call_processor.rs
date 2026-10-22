@@ -3,7 +3,7 @@ use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
 use bento_core::{ProcessorFactory, db::DbPool};
-use bento_trait::processor::ProcessorTrait;
+use bento_types::traits::processor::ProcessorTrait;
 use bento_types::{
     BlockAndEvents, CustomProcessorOutput, RichBlockEntry, Transaction, processors::ProcessorOutput,
     utils::timestamp_millis_to_naive_datetime,

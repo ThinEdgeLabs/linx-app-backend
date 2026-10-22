@@ -10,11 +10,11 @@ points endpoints.
 |---|---|
 | `crates/linx-indexer` | The application: processors, models, repositories, HTTP routers, services, binaries and all database migrations |
 | `config.toml` | Runtime tuning for the worker, backfill, server and points |
+| `assets/` | Share image backgrounds used by `/points/v1/share`, copied into the API image |
 | `crates/bento-core` | Block fetching from the Alephium node, the worker that runs processors, built-in block/event/transaction processors |
 | `crates/bento-cli` | Command-line entry point (`run worker`, `run backfill`, `run server`) and TOML config loading |
 | `crates/bento-server` | Axum server setup and Swagger UI |
-| `crates/bento-types` | Shared types and chain-data models |
-| `crates/bento-trait` | `ProcessorTrait` and the block provider traits |
+| `crates/bento-types` | Shared types, chain-data models, `ProcessorTrait` and the block provider traits |
 
 The `bento-*` crates started as the [bento-alephium](https://github.com/ThinEdgeLabs/bento-alephium) indexing
 framework; this repository no longer tracks it.

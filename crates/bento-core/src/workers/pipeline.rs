@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::Client;
 use anyhow::Result;
-use bento_trait::{processor::DynProcessor, stage::StageHandler};
+use bento_types::traits::{processor::DynProcessor, stage::StageHandler};
 use bento_types::{BlockBatch, DbPool, StageMessage};
 use tokio::sync::mpsc;
 

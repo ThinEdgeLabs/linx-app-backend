@@ -19,7 +19,6 @@ path = "src/bin/snapshots.rs"
 bento-core = { path = "../../crates/bento-core" }
 bento-cli = { path = "../../crates/bento-cli" }
 bento-types = { path = "../../crates/bento-types" }
-bento-trait = { path = "../../crates/bento-trait" }
 bento-server = { path = "../../crates/bento-server" }
 clap.workspace = true
 diesel.workspace = true
@@ -33,7 +32,6 @@ serde_json.workspace = true
 bigdecimal.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
-dotenv.workspace = true
 dotenvy.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

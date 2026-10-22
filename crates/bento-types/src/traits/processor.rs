@@ -1,8 +1,8 @@
 use std::{fmt::Debug, sync::Arc};
 
+use crate::{processors::ProcessorOutput, BlockAndEvents, DbPool};
 use anyhow::Result;
 use async_trait::async_trait;
-use bento_types::{processors::ProcessorOutput, BlockAndEvents, DbPool};
 
 /// Base trait for all processors that includes both processing and storage
 #[async_trait]
