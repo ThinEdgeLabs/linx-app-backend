@@ -10,7 +10,7 @@ ALTER TABLE lending_position_snapshots ADD COLUMN borrow_amount NUMERIC NOT NULL
 ALTER TABLE lending_position_snapshots ADD COLUMN borrow_amount_usd NUMERIC NOT NULL DEFAULT 0;
 
 -- Drop created_at column (redundant with timestamp)
-ALTER TABLE lending_position_snapshots DROP COLUMN created_at;
+ALTER TABLE lending_position_snapshots DROP COLUMN IF EXISTS created_at;
 
 -- Update indexes if any exist
 DROP INDEX IF EXISTS idx_lending_deposits_snapshots_address_market_timestamp;
