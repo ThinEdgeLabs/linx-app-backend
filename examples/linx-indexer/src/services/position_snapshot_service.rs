@@ -33,7 +33,12 @@ impl PositionSnapshotService {
 
     pub async fn generate_snapshots(&self) -> anyhow::Result<()> {
         let markets = self.lending_repository.get_all_markets().await?;
+        let blacklisted = self.lending_repository.get_blacklisted_market_ids().await?;
         for market in markets {
+            if blacklisted.contains(&market.id) {
+                tracing::debug!("Skipping position snapshots for blacklisted market {}", market.id);
+                continue;
+            }
             tracing::info!("Calculating position snapshots for market {}", market.id);
 
             // Get token info for the loan token

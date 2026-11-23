@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -19,6 +20,16 @@ use crate::{
     schema::{self},
 };
 use diesel_async::RunQueryDsl;
+
+/// SQL predicate excluding blacklisted markets. Append to the `WHERE` clause of raw queries
+/// over tables with a `market_id` column.
+const NOT_BLACKLISTED: &str = "market_id NOT IN (SELECT market_id FROM blacklisted_markets)";
+
+/// Diesel subquery selecting every blacklisted market id, for `.ne_all(...)` filters.
+fn blacklisted_market_ids() -> schema::blacklisted_markets::BoxedQuery<'static, diesel::pg::Pg, diesel::sql_types::Text>
+{
+    schema::blacklisted_markets::table.select(schema::blacklisted_markets::market_id).into_boxed()
+}
 
 #[cfg_attr(test, automock)]
 #[async_trait]
@@ -44,10 +55,12 @@ impl LendingRepository {
         Self { db_pool }
     }
 
+    /// Markets shown to users: every indexed market except blacklisted ones.
     pub async fn get_markets(&self, page: i64, limit: i64) -> Result<Vec<Market>> {
         let mut conn = self.db_pool.get().await?;
 
         let markets: Vec<Market> = schema::lending_markets::table
+            .filter(schema::lending_markets::id.ne_all(blacklisted_market_ids()))
             .order(schema::lending_markets::created_at.asc())
             .offset((page - 1) * limit)
             .limit(limit)
@@ -56,6 +69,7 @@ impl LendingRepository {
         Ok(markets)
     }
 
+    /// Every indexed market, blacklisted ones included.
     pub async fn get_all_markets(&self) -> Result<Vec<Market>> {
         let mut conn = self.db_pool.get().await?;
 
@@ -78,6 +92,13 @@ impl LendingRepository {
             .await?;
 
         Ok(())
+    }
+
+    pub async fn get_blacklisted_market_ids(&self) -> Result<HashSet<String>> {
+        let mut conn = self.db_pool.get().await?;
+
+        let ids: Vec<String> = blacklisted_market_ids().load(&mut conn).await?;
+        Ok(ids.into_iter().collect())
     }
 
     pub async fn get_market(&self, market_id: &str) -> Result<Option<Market>> {
@@ -103,6 +124,7 @@ impl LendingRepository {
 
         let mut query = schema::lending_events::table
             .filter(schema::lending_events::market_id.eq(market_id))
+            .filter(schema::lending_events::market_id.ne_all(blacklisted_market_ids()))
             .filter(schema::lending_events::event_type.eq_any(event_types))
             .into_boxed();
 
@@ -148,6 +170,7 @@ impl LendingRepository {
         Ok(events)
     }
 
+    /// Positions in non-blacklisted markets.
     pub async fn get_positions(
         &self,
         market_id: Option<String>,
@@ -155,18 +178,21 @@ impl LendingRepository {
         page: i64,
         limit: i64,
     ) -> Result<Vec<Position>> {
-        match (market_id.as_ref(), address.as_ref()) {
-            (Some(market_id), Some(address)) => {
-                if let Some(position) = self.calculate_user_position(address, market_id).await? {
-                    Ok(vec![position])
-                } else {
-                    Ok(vec![])
-                }
-            }
-            (None, Some(address)) => self.calculate_user_positions(address).await,
-            (Some(market_id), None) => self.calculate_positions_for_market(market_id, page, limit).await,
-            (None, None) => Err(anyhow::anyhow!("Either market_id or address must be provided")),
+        let blacklisted = self.get_blacklisted_market_ids().await?;
+        if market_id.as_ref().is_some_and(|id| blacklisted.contains(id)) {
+            return Ok(Vec::new());
         }
+
+        let mut positions = match (market_id.as_ref(), address.as_ref()) {
+            (Some(market_id), Some(address)) => {
+                self.calculate_user_position(address, market_id).await?.into_iter().collect()
+            }
+            (None, Some(address)) => self.calculate_user_positions(address).await?,
+            (Some(market_id), None) => self.calculate_positions_for_market(market_id, page, limit).await?,
+            (None, None) => return Err(anyhow::anyhow!("Either market_id or address must be provided")),
+        };
+        positions.retain(|position| !blacklisted.contains(&position.market_id));
+        Ok(positions)
     }
 
     pub async fn insert_position_snapshots(&self, snapshots: &[NewPositionSnapshot]) -> Result<()> {
@@ -233,11 +259,13 @@ impl LendingRepository {
         Ok(())
     }
 
-    /// Latest snapshot per market (DISTINCT ON (market_id) ORDER BY snapshot_timestamp DESC).
+    /// Latest snapshot per non-blacklisted market
+    /// (DISTINCT ON (market_id) ORDER BY snapshot_timestamp DESC).
     pub async fn get_latest_market_state_snapshots(&self) -> Result<Vec<MarketStateSnapshot>> {
         use schema::market_state_snapshots::dsl::*;
         let mut conn = self.db_pool.get().await?;
         let rows: Vec<MarketStateSnapshot> = market_state_snapshots
+            .filter(market_id.ne_all(blacklisted_market_ids()))
             .distinct_on(market_id)
             .order((market_id, snapshot_timestamp.desc()))
             .load(&mut conn)
@@ -247,7 +275,8 @@ impl LendingRepository {
 
     /// Last snapshot per (market, time bucket) within a rolling window.
     /// `window_seconds` defines the lookback (`NOW() - window_seconds`).
-    /// `market_id_filter = None` returns rows for every market.
+    /// `market_id_filter = None` returns rows for every market. Blacklisted markets are
+    /// always excluded.
     pub async fn get_market_state_points(
         &self,
         market_id_filter: Option<&str>,
@@ -265,8 +294,9 @@ impl LendingRepository {
                     cumulative_supply_volume_usd, cumulative_borrow_volume_usd, \
                     bad_debt_usd \
              FROM market_state_snapshots \
-             WHERE snapshot_timestamp >= NOW() - make_interval(secs => $1)",
+             WHERE snapshot_timestamp >= NOW() - make_interval(secs => $1) AND {}",
             bucket.date_trunc_kind(),
+            NOT_BLACKLISTED,
         );
 
         let rows = match market_id_filter {
@@ -352,11 +382,11 @@ impl LendingRepository {
                             supply_amount_usd, \
                             borrow_amount_usd \
                      FROM lending_position_snapshots \
-                     WHERE address = $1 AND market_id = $2 AND timestamp >= $3 \
+                     WHERE address = $1 AND market_id = $2 AND timestamp >= $3 AND {1} \
                      ORDER BY date_trunc('{0}', timestamp), timestamp DESC \
                  ) sub \
                  ORDER BY bucket_ts ASC",
-                bucket_interval
+                bucket_interval, NOT_BLACKLISTED
             ))
             .bind::<diesel::sql_types::Text, _>(address)
             .bind::<diesel::sql_types::Text, _>(market_id)
@@ -376,12 +406,12 @@ impl LendingRepository {
                             supply_amount_usd, \
                             borrow_amount_usd \
                      FROM lending_position_snapshots \
-                     WHERE address = $1 AND timestamp >= $2 \
+                     WHERE address = $1 AND timestamp >= $2 AND {1} \
                      ORDER BY date_trunc('{0}', timestamp), market_id, timestamp DESC \
                  ) sub \
                  GROUP BY bucket_ts \
                  ORDER BY bucket_ts ASC",
-                bucket_interval
+                bucket_interval, NOT_BLACKLISTED
             ))
             .bind::<diesel::sql_types::Text, _>(address)
             .bind::<diesel::sql_types::Timestamp, _>(start_time)
@@ -525,6 +555,7 @@ impl LendingRepository {
         Ok(positions)
     }
 
+    /// Position snapshots in `[start_time, end_time)`.
     pub async fn get_position_snapshots_in_period(
         &self,
         start_time: chrono::NaiveDateTime,
@@ -533,6 +564,7 @@ impl LendingRepository {
         let mut conn = self.db_pool.get().await?;
 
         let snapshots: Vec<crate::models::PositionSnapshot> = schema::lending_position_snapshots::table
+            .filter(schema::lending_position_snapshots::market_id.ne_all(blacklisted_market_ids()))
             .filter(schema::lending_position_snapshots::timestamp.ge(start_time))
             .filter(schema::lending_position_snapshots::timestamp.lt(end_time))
             .load(&mut conn)
@@ -541,6 +573,7 @@ impl LendingRepository {
         Ok(snapshots)
     }
 
+    /// Borrow events in `[start_time, end_time)`.
     pub async fn get_borrow_events_in_period(
         &self,
         start_time: chrono::NaiveDateTime,
@@ -549,6 +582,7 @@ impl LendingRepository {
         let mut conn = self.db_pool.get().await?;
 
         let events: Vec<LendingEvent> = schema::lending_events::table
+            .filter(schema::lending_events::market_id.ne_all(blacklisted_market_ids()))
             .filter(schema::lending_events::event_type.eq("Borrow"))
             .filter(schema::lending_events::block_time.ge(start_time))
             .filter(schema::lending_events::block_time.lt(end_time))
@@ -558,13 +592,13 @@ impl LendingRepository {
         Ok(events)
     }
 
-    /// SUM of the latest per-market USD totals across all markets. Reads from
+    /// SUM of the latest per-market USD totals across all non-blacklisted markets. Reads from
     /// `market_state_snapshots` (one row per market per tick) — orders of magnitude
     /// fewer rows than aggregating per-user position snapshots.
     pub async fn get_latest_position_snapshot_totals(&self) -> Result<PositionTotals> {
         let mut conn = self.db_pool.get().await?;
 
-        let row: PositionTotals = diesel::sql_query(
+        let row: PositionTotals = diesel::sql_query(format!(
             "SELECT COALESCE(SUM(total_supply_usd), 0)     AS total_supply_usd, \
                     COALESCE(SUM(total_borrow_usd), 0)     AS total_borrow_usd, \
                     COALESCE(SUM(total_collateral_usd), 0) AS total_collateral_usd \
@@ -572,23 +606,25 @@ impl LendingRepository {
                  SELECT DISTINCT ON (market_id) \
                         market_id, total_supply_usd, total_borrow_usd, total_collateral_usd \
                  FROM market_state_snapshots \
+                 WHERE {NOT_BLACKLISTED} \
                  ORDER BY market_id, snapshot_timestamp DESC \
              ) latest",
-        )
+        ))
         .get_result(&mut conn)
         .await?;
 
         Ok(row)
     }
 
-    /// 30-day rolling average supply APY across markets, weighted by each market's current TVL.
+    /// 30-day rolling average supply APY across non-blacklisted markets, weighted by each
+    /// market's current TVL.
     /// `supply_apy` is derived per row from stored `borrow_apy`, `total_*_assets`, and `fee`
     /// (WAD-scaled): `supply = borrow × utilization × (1 − fee/WAD)`.
     /// Per-market TVL = `total_supply_usd + total_collateral_usd` on the latest row.
     pub async fn get_30d_avg_apy_tvl_weighted(&self) -> Result<BigDecimal> {
         let mut conn = self.db_pool.get().await?;
 
-        let row: Apy30d = diesel::sql_query(
+        let row: Apy30d = diesel::sql_query(format!(
             "WITH supply_rates AS ( \
                  SELECT market_id, \
                         CASE WHEN total_supply_assets > 0 \
@@ -598,7 +634,7 @@ impl LendingRepository {
                              ELSE 0 \
                         END AS supply_apy \
                  FROM market_state_snapshots \
-                 WHERE snapshot_timestamp >= NOW() - INTERVAL '30 days' \
+                 WHERE snapshot_timestamp >= NOW() - INTERVAL '30 days' AND {NOT_BLACKLISTED} \
              ), \
              market_avg AS ( \
                  SELECT market_id, AVG(supply_apy) AS avg_rate \
@@ -609,12 +645,13 @@ impl LendingRepository {
                  SELECT DISTINCT ON (market_id) \
                         market_id, total_supply_usd + total_collateral_usd AS tvl_usd \
                  FROM market_state_snapshots \
+                 WHERE {NOT_BLACKLISTED} \
                  ORDER BY market_id, snapshot_timestamp DESC \
              ) \
              SELECT COALESCE(SUM(t.tvl_usd * a.avg_rate) / NULLIF(SUM(t.tvl_usd), 0), 0) AS apy_30d_avg \
              FROM market_avg a JOIN market_tvl t USING (market_id) \
              WHERE t.tvl_usd > 0",
-        )
+        ))
         .get_result(&mut conn)
         .await?;
 
@@ -1108,5 +1145,343 @@ mod tests {
         assert_eq!(totals.total_supply_usd, BigDecimal::from(0));
         assert_eq!(totals.total_borrow_usd, BigDecimal::from(0));
         assert_eq!(totals.total_collateral_usd, BigDecimal::from(0));
+    }
+
+    /******* Blacklisted markets *******/
+
+    const LISTED_MARKET: &str = "test-blacklist-listed-market";
+    const BLACKLISTED_MARKET: &str = "test-blacklist-blacklisted-market";
+
+    async fn exec(pool: &Arc<Pool<AsyncPgConnection>>, sql: &str) {
+        let mut conn = pool.get().await.unwrap();
+        diesel::sql_query(sql).execute(&mut conn).await.unwrap();
+    }
+
+    async fn cleanup_blacklist_fixtures(pool: &Arc<Pool<AsyncPgConnection>>) {
+        let ids = format!("('{LISTED_MARKET}', '{BLACKLISTED_MARKET}')");
+        exec(pool, &format!("DELETE FROM blacklisted_markets WHERE market_id IN {ids}")).await;
+        exec(pool, &format!("DELETE FROM lending_markets WHERE id IN {ids}")).await;
+        exec(pool, &format!("DELETE FROM lending_events WHERE market_id IN {ids}")).await;
+        exec(pool, &format!("DELETE FROM lending_position_snapshots WHERE market_id IN {ids}")).await;
+        exec(pool, &format!("DELETE FROM market_state_snapshots WHERE market_id IN {ids}")).await;
+    }
+
+    async fn setup_blacklist_fixtures(pool: &Arc<Pool<AsyncPgConnection>>) {
+        cleanup_blacklist_fixtures(pool).await;
+        exec(
+            pool,
+            &format!("INSERT INTO blacklisted_markets (market_id, reason) VALUES ('{BLACKLISTED_MARKET}', 'test')"),
+        )
+        .await;
+    }
+
+    fn make_market(id: &str) -> Market {
+        Market {
+            id: id.to_string(),
+            market_contract_id: format!("{id}-contract"),
+            collateral_token: "collateral".to_string(),
+            loan_token: "loan".to_string(),
+            oracle: "oracle".to_string(),
+            irm: "irm".to_string(),
+            ltv: BigDecimal::from(0),
+            created_at: Utc::now().naive_utc(),
+        }
+    }
+
+    /// Supply APY = borrow_apy × utilization (fee is zero).
+    fn make_market_state(
+        market_id: &str,
+        supply_usd: i64,
+        borrow_apy: &str,
+        utilization_pct: i64,
+        snapshot_timestamp: NaiveDateTime,
+    ) -> NewMarketStateSnapshot {
+        NewMarketStateSnapshot {
+            market_id: market_id.to_string(),
+            total_supply_assets: BigDecimal::from(100),
+            total_supply_shares: BigDecimal::from(100),
+            total_borrow_assets: BigDecimal::from(utilization_pct),
+            total_borrow_shares: BigDecimal::from(utilization_pct),
+            snapshot_timestamp,
+            total_collateral_assets: BigDecimal::from(0),
+            total_supply_usd: BigDecimal::from(supply_usd),
+            total_borrow_usd: BigDecimal::from(supply_usd / 2),
+            total_collateral_usd: BigDecimal::from(supply_usd * 3),
+            borrow_apy: BigDecimal::from_str(borrow_apy).unwrap(),
+            fee: BigDecimal::from(0),
+            cumulative_supply_volume_usd: BigDecimal::from(0),
+            cumulative_borrow_volume_usd: BigDecimal::from(0),
+            bad_debt_usd: BigDecimal::from(0),
+        }
+    }
+
+    fn make_event(market_id: &str, event_type: &str, address: &str, block_time: NaiveDateTime) -> NewLendingEvent {
+        NewLendingEvent {
+            market_id: market_id.to_string(),
+            event_type: event_type.to_string(),
+            token_id: "loan".to_string(),
+            on_behalf: address.to_string(),
+            amount: BigDecimal::from(10),
+            shares: BigDecimal::from(10),
+            transaction_id: format!("{market_id}-{event_type}-tx"),
+            event_index: 0,
+            block_time,
+            created_at: block_time,
+            fields: serde_json::json!([]),
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn the_exploit_market_is_blacklisted_by_the_migration() {
+        let pool = create_test_pool().await;
+        let repo = LendingRepository::new(pool);
+
+        let blacklisted = repo.get_blacklisted_market_ids().await.unwrap();
+
+        assert!(blacklisted.contains("9f539d49c55da710a919981cb1ac5547c6ef2acf16e685fb401570802d2a99f0"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn market_list_leaves_out_blacklisted_markets_but_jobs_still_see_them() {
+        let pool = create_test_pool().await;
+        setup_blacklist_fixtures(&pool).await;
+        let repo = LendingRepository::new(pool.clone());
+        repo.insert_markets(&[make_market(LISTED_MARKET), make_market(BLACKLISTED_MARKET)]).await.unwrap();
+
+        let listed: Vec<String> = repo.get_markets(1, 100).await.unwrap().into_iter().map(|m| m.id).collect();
+        let all: Vec<String> = repo.get_all_markets().await.unwrap().into_iter().map(|m| m.id).collect();
+
+        assert!(listed.contains(&LISTED_MARKET.to_string()));
+        assert!(!listed.contains(&BLACKLISTED_MARKET.to_string()));
+        assert!(all.contains(&LISTED_MARKET.to_string()));
+        assert!(all.contains(&BLACKLISTED_MARKET.to_string()));
+
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn protocol_totals_and_latest_market_stats_leave_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+        setup_blacklist_fixtures(&pool).await;
+        let repo = LendingRepository::new(pool.clone());
+        let ts = Utc::now().naive_utc() - Duration::hours(1);
+        repo.insert_market_state_snapshots(&[
+            make_market_state(LISTED_MARKET, 1000, "0.1", 50, ts),
+            make_market_state(BLACKLISTED_MARKET, 999_000, "0.1", 50, ts),
+        ])
+        .await
+        .unwrap();
+
+        let totals = repo.get_latest_position_snapshot_totals().await.unwrap();
+        let latest: Vec<String> =
+            repo.get_latest_market_state_snapshots().await.unwrap().into_iter().map(|s| s.market_id).collect();
+
+        assert_eq!(totals.total_supply_usd, BigDecimal::from(1000));
+        assert_eq!(totals.total_borrow_usd, BigDecimal::from(500));
+        assert_eq!(totals.total_collateral_usd, BigDecimal::from(3000));
+        assert_eq!(latest, vec![LISTED_MARKET.to_string()]);
+
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn the_30d_apy_leaves_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+        setup_blacklist_fixtures(&pool).await;
+        let repo = LendingRepository::new(pool.clone());
+        let ts = Utc::now().naive_utc() - Duration::hours(1);
+        // Listed: 0.1 borrow APY × 50% utilization = 0.05 supply APY.
+        // Blacklisted: a huge APY with far more TVL would dominate the weighted average.
+        repo.insert_market_state_snapshots(&[
+            make_market_state(LISTED_MARKET, 1000, "0.1", 50, ts),
+            make_market_state(BLACKLISTED_MARKET, 999_000, "10", 100, ts),
+        ])
+        .await
+        .unwrap();
+
+        let apy = repo.get_30d_avg_apy_tvl_weighted().await.unwrap();
+
+        assert_eq!(apy, BigDecimal::from_str("0.05").unwrap());
+
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn stats_series_leaves_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        cleanup_all_stats_tables(&pool).await;
+        setup_blacklist_fixtures(&pool).await;
+        let repo = LendingRepository::new(pool.clone());
+        let ts = Utc::now().naive_utc() - Duration::hours(1);
+        repo.insert_market_state_snapshots(&[
+            make_market_state(LISTED_MARKET, 1000, "0.1", 50, ts),
+            make_market_state(BLACKLISTED_MARKET, 999_000, "0.1", 50, ts),
+        ])
+        .await
+        .unwrap();
+
+        let all = repo.get_market_state_points(None, SeriesBucket::Hour, 24 * 3600).await.unwrap();
+        let blacklisted_only =
+            repo.get_market_state_points(Some(BLACKLISTED_MARKET), SeriesBucket::Hour, 24 * 3600).await.unwrap();
+
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].market_id, LISTED_MARKET);
+        assert!(blacklisted_only.is_empty());
+
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn user_position_history_leaves_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        setup_blacklist_fixtures(&pool).await;
+        let test_addr = "test-blacklist-history";
+        cleanup_test_snapshots(&pool, test_addr).await;
+        let repo = LendingRepository::new(pool.clone());
+        let ts = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        repo.insert_position_snapshots(&[
+            make_snapshot(test_addr, LISTED_MARKET, "100.0", "10.0", ts),
+            make_snapshot(test_addr, BLACKLISTED_MARKET, "5000.0", "500.0", ts),
+        ])
+        .await
+        .unwrap();
+
+        let all = repo.get_user_position_history(test_addr, None, crate::models::Timeframe::All).await.unwrap();
+        let listed_only = repo
+            .get_user_position_history(test_addr, Some(LISTED_MARKET), crate::models::Timeframe::All)
+            .await
+            .unwrap();
+        let blacklisted_only = repo
+            .get_user_position_history(test_addr, Some(BLACKLISTED_MARKET), crate::models::Timeframe::All)
+            .await
+            .unwrap();
+
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].supply_amount_usd, BigDecimal::from(100));
+        assert_eq!(all[0].borrow_amount_usd, BigDecimal::from(10));
+        assert_eq!(listed_only.len(), 1);
+        assert!(blacklisted_only.is_empty());
+
+        cleanup_test_snapshots(&pool, test_addr).await;
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn position_snapshots_read_for_points_leave_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        setup_blacklist_fixtures(&pool).await;
+        let test_addr = "test-blacklist-points";
+        cleanup_test_snapshots(&pool, test_addr).await;
+        let repo = LendingRepository::new(pool.clone());
+        let ts = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        repo.insert_position_snapshots(&[
+            make_snapshot(test_addr, LISTED_MARKET, "100.0", "10.0", ts),
+            make_snapshot(test_addr, BLACKLISTED_MARKET, "5000.0", "500.0", ts),
+        ])
+        .await
+        .unwrap();
+
+        let markets: Vec<String> = repo
+            .get_position_snapshots_in_period(ts - Duration::hours(1), ts + Duration::hours(1))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|s| s.address == test_addr)
+            .map(|s| s.market_id)
+            .collect();
+
+        assert_eq!(markets, vec![LISTED_MARKET.to_string()]);
+
+        cleanup_test_snapshots(&pool, test_addr).await;
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn activity_and_borrow_events_leave_out_blacklisted_markets() {
+        let pool = create_test_pool().await;
+        setup_blacklist_fixtures(&pool).await;
+        let test_addr = "test-blacklist-activity";
+        let repo = LendingRepository::new(pool.clone());
+        let ts = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        repo.insert_lending_events(&[
+            make_event(LISTED_MARKET, "Borrow", test_addr, ts),
+            make_event(BLACKLISTED_MARKET, "Borrow", test_addr, ts),
+        ])
+        .await
+        .unwrap();
+        let borrow = [String::from("Borrow")];
+
+        let listed_activity = repo.get_activity(LISTED_MARKET.to_string(), &borrow, None, 1, 20).await.unwrap();
+        let blacklisted_activity =
+            repo.get_activity(BLACKLISTED_MARKET.to_string(), &borrow, None, 1, 20).await.unwrap();
+        let borrow_event_markets: Vec<String> = repo
+            .get_borrow_events_in_period(ts - Duration::hours(1), ts + Duration::hours(1))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.on_behalf == test_addr)
+            .map(|e| e.market_id)
+            .collect();
+
+        assert_eq!(listed_activity.len(), 1);
+        assert!(blacklisted_activity.is_empty());
+        assert_eq!(borrow_event_markets, vec![LISTED_MARKET.to_string()]);
+
+        cleanup_blacklist_fixtures(&pool).await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "requires database"]
+    async fn positions_only_reference_markets_in_the_market_list() {
+        let pool = create_test_pool().await;
+        setup_blacklist_fixtures(&pool).await;
+        let test_addr = "test-blacklist-positions";
+        let repo = LendingRepository::new(pool.clone());
+        repo.insert_markets(&[make_market(LISTED_MARKET), make_market(BLACKLISTED_MARKET)]).await.unwrap();
+        let ts = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap().and_hms_opt(10, 0, 0).unwrap();
+        repo.insert_lending_events(&[
+            make_event(LISTED_MARKET, "Supply", test_addr, ts),
+            make_event(BLACKLISTED_MARKET, "Supply", test_addr, ts),
+        ])
+        .await
+        .unwrap();
+        let addr = Some(test_addr.to_string());
+
+        let by_address = repo.get_positions(None, addr.clone(), 1, 20).await.unwrap();
+        let by_listed_market = repo.get_positions(Some(LISTED_MARKET.to_string()), None, 1, 20).await.unwrap();
+        let by_blacklisted_market =
+            repo.get_positions(Some(BLACKLISTED_MARKET.to_string()), None, 1, 20).await.unwrap();
+        let by_address_and_blacklisted_market =
+            repo.get_positions(Some(BLACKLISTED_MARKET.to_string()), addr, 1, 20).await.unwrap();
+        let listed_market_ids: HashSet<String> =
+            repo.get_markets(1, 100).await.unwrap().into_iter().map(|m| m.id).collect();
+
+        let position_markets: Vec<String> = by_address.iter().map(|p| p.market_id.clone()).collect();
+        assert_eq!(position_markets, vec![LISTED_MARKET.to_string()]);
+        assert!(position_markets.iter().all(|id| listed_market_ids.contains(id)));
+        assert_eq!(by_listed_market.len(), 1);
+        assert!(by_blacklisted_market.is_empty());
+        assert!(by_address_and_blacklisted_market.is_empty());
+
+        cleanup_blacklist_fixtures(&pool).await;
     }
 }

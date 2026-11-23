@@ -139,7 +139,7 @@ mod tests {
     async fn test_get_token_price_real_integration() {
         let service = TokenService::new(
             Network::Mainnet,
-            "https://api.linxlabs.org/tokens".to_string(),
+            "https://api.linxlabs.org/v1/tokens".to_string(),
             "test_oracle".to_string(),
             0,
         );
@@ -156,7 +156,7 @@ mod tests {
     async fn test_cache_functionality() {
         let service = TokenService::new(
             Network::Mainnet,
-            "https://api.linxlabs.org/tokens".to_string(),
+            "https://api.linxlabs.org/v1/tokens".to_string(),
             "test_oracle".to_string(),
             0,
         );

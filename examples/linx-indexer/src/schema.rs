@@ -16,6 +16,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    blacklisted_markets (market_id) {
+        market_id -> Text,
+        reason -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     blocks (hash) {
         hash -> Text,
         timestamp -> Timestamp,
@@ -269,6 +277,7 @@ diesel::joinable!(points_snapshots -> points_seasons (season_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_transactions,
+    blacklisted_markets,
     blocks,
     events,
     lending_events,

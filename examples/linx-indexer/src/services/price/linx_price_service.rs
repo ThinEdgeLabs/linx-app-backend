@@ -196,7 +196,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default since it requires network access
     async fn test_get_token_price_real_api() {
-        let service = LinxPriceService::new("https://api.linxlabs.org/tokens".to_string(), Network::Mainnet);
+        let service = LinxPriceService::new("https://api.linxlabs.org/v1/tokens".to_string(), Network::Mainnet);
 
         // ALPH token ID
         let alph_token_id = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -211,7 +211,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default since it requires network access
     async fn test_get_multiple_prices_real_api() {
-        let service = LinxPriceService::new("https://api.linxlabs.org/tokens".to_string(), Network::Mainnet);
+        let service = LinxPriceService::new("https://api.linxlabs.org/v1/tokens".to_string(), Network::Mainnet);
 
         let token_ids = vec![
             "0000000000000000000000000000000000000000000000000000000000000000".to_string(), // ALPH
