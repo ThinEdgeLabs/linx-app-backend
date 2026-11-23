@@ -20,7 +20,7 @@ linx_group = 0
 dia_oracle_address = "######################################"
 
 [price_service]
-linx_api_url = "https://api.linxlabs.org/tokens"
+linx_api_url = "https://linx-api-host/v1/tokens"
 
 [points]
 referral_percentage = 0.05
